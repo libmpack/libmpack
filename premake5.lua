@@ -1,8 +1,8 @@
 workspace 'mpack'
   configurations {'debug', 'debug-asan', 'debug-ubsan', 'debug-msan', 'release'}
   language 'C'
-  location(path.join(_MAIN_SCRIPT_DIR, 'build'))
-  includedirs(path.join(_MAIN_SCRIPT_DIR, 'include'))
+  location 'build'
+  includedirs 'include'
   flags {'ExtraWarnings'}
   buildoptions {'-Wconversion', '-Wstrict-prototypes', '-pedantic'}
 
@@ -38,33 +38,27 @@ filter {'configurations:release'}
   flags {'FatalWarnings'}
 
 
-project 'mpack-core'
+project 'mpack'
   kind 'StaticLib'
   buildoptions {'-ansi'}
   files {
     'src/*.c'
   }
 
-local checkflags = io.popen('pkg-config --libs check'):read('*a')
-local janssonflags = io.popen('pkg-config --libs jansson'):read('*a')
+project 'tap'
+  kind 'StaticLib'
+  buildoptions {
+    '-std=gnu99', '-Wno-conversion', '-Wno-unused-parameter'
+  }
+  files {
+    'test/deps/tap/*.c'
+  }
 
--- both check and jansson are required for the tests
-if #checkflags and #janssonflags then
-  local libs = {checkflags, janssonflags}
-  local ldflags = {}
-  for i = 1, #libs do
-    for ldflag in libs[i]:gmatch('%S+') do
-      table.insert(ldflags, ldflag)
-    end
-  end
-  project 'mpack-test'
-    kind 'ConsoleApp'
-    files {
-      'test/*.c'
-    }
-    buildoptions '-std=c99'
-    linkoptions(ldflags)
-    links {
-      'mpack-core'
-    }
-end
+project 'mpack-test'
+  kind 'ConsoleApp'
+  includedirs {'test/deps/tap'}
+  files {
+    'test/*.c'
+  }
+  buildoptions '-std=c99'
+  links {'m', 'mpack', 'tap'}
