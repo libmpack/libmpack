@@ -1,6 +1,46 @@
 config ?= debug
 
+FETCH ?= curl -L -o -
+SYSTEM ?= $(shell uname -s)
+
+ifeq "$(SYSTEM)" "Darwin"
+PREMAKE_PLAT := macosx
+else
+PREMAKE_PLAT := unix
+endif
+
+PREMAKE_URL_PREFIX := https://github.com/premake/premake-core/releases/download
+PREMAKE_VERSION ?= 5.0.0-alpha6
+PREMAKE_FETCH_URL := $(PREMAKE_URL_PREFIX)/v$(PREMAKE_VERSION)/premake-$(PREMAKE_VERSION)-src.zip
+PREMAKE_FALLBACK_DIR ?= $(shell pwd)/.deps/usr/bin
+PREMAKE_GET_CMD = mkdir -p .deps/src/premake && \
+									 cd .deps/src/premake && \
+									 $(FETCH) $(PREMAKE_FETCH_URL) > premake-src.zip && \
+									 unzip premake-src.zip && \
+									 cd premake-$(PREMAKE_VERSION) && \
+									 cd build/gmake.$(PREMAKE_PLAT) && \
+									 make config=release && \
+									 mkdir -p $(PREMAKE_FALLBACK_DIR) && \
+									 cp ../../bin/release/premake5 $(PREMAKE_FALLBACK_DIR)/premake5
+
+
+PREMAKE_BIN ?= $(shell which premake5 2> /dev/null)
+
+
+ifeq "$(strip $(PREMAKE_BIN))" ""
+PREMAKE_BIN := $(PREMAKE_FALLBACK_DIR)/premake5
+NEED_FETCH := $(shell [ -x $(PREMAKE_BIN) ] || echo "y")
+ifeq "$(NEED_FETCH)" "y"
+PREMAKE_BIN_TGT = $(PREMAKE_GET_CMD)
+endif
+endif
+
 -include local.mk
+
+all: test
+
+$(PREMAKE_BIN):
+	$(PREMAKE_BIN_TGT)
 
 ifneq "$(strip $(findstring clang,$(CC)))" ""
 SYMBOLIZER := $(shell which $(subst clang,llvm-symbolizer,$(CC)))
@@ -23,8 +63,8 @@ gdb: bin
 bin: build
 	cd build && $(MAKE) config=$(config)
 
-build: premake5.lua
-	premake5 gmake && premake5 export-compile-commands || true
+build: $(PREMAKE_BIN)
+	$(PREMAKE_BIN) gmake
 
 clean:
 	rm -rf build
