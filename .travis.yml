@@ -2,12 +2,21 @@ sudo: false
 language: c
 compiler: clang
 
+addons:
+  apt:
+    packages:
+      - gcc-multilib
+
 env:
-  - CONFIG=debug
-  - CONFIG=debug-asan
-  - CONFIG=debug-msan
-  - CONFIG=debug-ubsan
-  - CONFIG=release
+  global:
+    - ARCH=x64
+  matrix:
+    - CONFIG=debug
+    - CONFIG=debug-asan
+    - CONFIG=debug-msan
+    - CONFIG=debug-ubsan
+    - CONFIG=release
+    - CONFIG=release ARCH=x32
 
 os:
   - linux
@@ -21,7 +30,7 @@ matrix:
     - os: osx
 
 script:
-  make config=${CONFIG} test
+  make config=${CONFIG} arch=${ARCH} test
 
 cache:
   directories:

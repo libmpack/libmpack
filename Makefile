@@ -1,4 +1,6 @@
 config ?= debug
+arch ?= $(shell uname -m | grep 64 > /dev/null && echo x64 || echo x32)
+premake_config := $(config)_$(arch)
 
 FETCH ?= curl -L -o -
 SYSTEM ?= $(shell uname -s)
@@ -35,33 +37,36 @@ PREMAKE_BIN_TGT = $(PREMAKE_GET_CMD)
 endif
 endif
 
+# ifneq "$(strip $(findstring clang,$(CC)))" ""
+# SYMBOLIZER := $(shell which $(subst clang,llvm-symbolizer,$(CC)))
+# export ASAN_OPTIONS := log_path=asan:detect_leaks=1
+# export ASAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
+# export MSAN_OPTIONS := log_path=msan
+# export MSAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
+# export UBSAN_OPTIONS := log_path=ubsan
+# export UBSAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
+# endif
+
 -include local.mk
 
-all: test
+all: bin
 
 $(PREMAKE_BIN):
 	$(PREMAKE_BIN_TGT)
 
-ifneq "$(strip $(findstring clang,$(CC)))" ""
-SYMBOLIZER := $(shell which $(subst clang,llvm-symbolizer,$(CC)))
-export ASAN_OPTIONS := log_path=asan:detect_leaks=1
-export ASAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
-export MSAN_OPTIONS := log_path=msan
-export MSAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
-export UBSAN_OPTIONS := log_path=ubsan
-export UBSAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
-endif
-
 export CK_FORK := no
 
-test: bin
-	./build/bin/$(config)/mpack-test
+test: test-bin
+	./build/bin/$(arch)/$(config)/mpack-test
 
-gdb: bin
-	gdb -x .gdb ./build/bin/$(config)/mpack-test
+gdb: test-bin
+	gdb -x .gdb ./build/bin/$(arch)/$(config)/mpack-test
+
+test-bin: bin
+	cd build && $(MAKE) config=$(premake_config) mpack-test
 
 bin: build
-	cd build && $(MAKE) config=$(config)
+	cd build && $(MAKE) config=$(premake_config) mpack
 
 build: $(PREMAKE_BIN)
 	$(PREMAKE_BIN) gmake
@@ -69,4 +74,4 @@ build: $(PREMAKE_BIN)
 clean:
 	rm -rf build
 
-.PHONY: test bin clean
+.PHONY: test gdb bin clean

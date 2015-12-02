@@ -1,10 +1,19 @@
 workspace 'mpack'
   configurations {'debug', 'debug-asan', 'debug-ubsan', 'debug-msan', 'release'}
+  platforms {'x64', 'x32'}
   language 'C'
   location 'build'
   includedirs 'include'
   flags {'ExtraWarnings'}
   buildoptions {'-Wconversion', '-Wstrict-prototypes', '-pedantic'}
+
+
+filter 'platforms:x64'
+  architecture 'x64'
+
+
+filter 'platforms:x32'
+  architecture 'x32'
 
 
 filter {'configurations:debug*'}
