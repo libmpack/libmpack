@@ -1,0 +1,31 @@
+sudo: false
+language: c
+compiler: clang
+
+env:
+  - CONFIG=debug
+  - CONFIG=debug-asan
+  - CONFIG=debug-msan
+  - CONFIG=debug-ubsan
+  - CONFIG=release
+
+os:
+  - linux
+
+matrix:
+  include:
+    - os: osx
+      env: CONFIG=release
+      compiler: clang
+  allow_failures:
+    - os: osx
+
+script:
+  make config=${CONFIG} test
+
+cache:
+  directories:
+    - .deps/usr
+
+after_failure:
+  cat asan.* ubsan.* msan.* || true
