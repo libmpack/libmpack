@@ -23,6 +23,13 @@ os:
 
 matrix:
   include:
+    - os: linux
+      env: CONFIG=coverage
+      compiler: gcc
+      before_install:
+        - pip install --user cpp-coveralls
+      after_success:
+        - coveralls -b build --gcov-options '\-lp'
     - os: osx
       env: CONFIG=release
       compiler: clang
