@@ -56,6 +56,12 @@ $(PREMAKE_BIN):
 
 export CK_FORK := no
 
+coverage:
+	find build/ -type f -name '*.gcda' -print0 | xargs -0 rm -f && \
+		$(MAKE) config=coverage arch=$(arch) test && \
+		cd build && \
+		find obj/$(arch)/coverage/mpack -type f -name '*.o' -print0 | xargs -0 gcov
+
 test: test-bin
 	./build/bin/$(arch)/$(config)/mpack-test
 
@@ -74,4 +80,4 @@ build: $(PREMAKE_BIN)
 clean:
 	rm -rf build
 
-.PHONY: test gdb bin clean
+.PHONY: test coverage gdb bin clean

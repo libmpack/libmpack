@@ -11,10 +11,10 @@ env:
   global:
     - ARCH=x64
   matrix:
+    - CONFIG=asan
+    - CONFIG=msan
+    - CONFIG=ubsan
     - CONFIG=debug
-    - CONFIG=debug-asan
-    - CONFIG=debug-msan
-    - CONFIG=debug-ubsan
     - CONFIG=release
     - CONFIG=release ARCH=x32
 
