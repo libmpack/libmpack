@@ -2,11 +2,6 @@ sudo: false
 language: c
 compiler: clang
 
-addons:
-  apt:
-    packages:
-      - gcc-multilib
-
 env:
   global:
     - ARCH=x64
@@ -16,13 +11,18 @@ env:
     - CONFIG=ubsan
     - CONFIG=debug
     - CONFIG=release
-    - CONFIG=release ARCH=x32
 
 os:
   - linux
 
 matrix:
   include:
+    - os: linux
+      env: CONFIG=release ARCH=x32
+      addons:
+        apt:
+          packages:
+            - gcc-multilib
     - os: linux
       env: CONFIG=coverage
       compiler: gcc
