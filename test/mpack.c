@@ -10,15 +10,9 @@
 #include <math.h>
 
 #include "tap.h"
+#include "fixtures.h"
 
 #include "mpack.h"
-
-#ifndef MIN
-# define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
-#endif
-#define ARRAY_SIZE(arr) \
-  ((sizeof(arr)/sizeof((arr)[0])) / \
-   ((size_t)(!(sizeof(arr) % sizeof((arr)[0])))))
 
 
 typedef struct {
@@ -148,9 +142,6 @@ static void unpack_buf(const char *buf, size_t buflen)
   }
 }
 
-#include "fixtures.inl"
-
-
 /* Each unpack test is executed multiple times, with each feeding data in
  * chunks of different sizes. */
   static const size_t chunksizes[] =
@@ -158,7 +149,7 @@ static void unpack_buf(const char *buf, size_t buflen)
 
 static void unpack_test(int fixture_idx)
 {
-  struct fixture *f = fixtures + fixture_idx;
+  const struct fixture *f = fixtures + fixture_idx;
   char *fjson;
   uint8_t *fmsgpack;
   size_t fmsgpacklen;

@@ -1,3 +1,9 @@
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "fixtures.h"
+
 static void write_size_be(uint8_t *p, size_t s)
 {
   if (s <= UINT8_MAX) {
@@ -173,16 +179,7 @@ static void ext_generator(char **js, uint8_t **mp, size_t *mplen, size_t s)
   blob_pattern_generator(js, mp, mplen, s, 0xc7, 'e');
 }
 
-struct fixture {
-  char *json;
-  uint8_t *msgpack;
-  size_t msgpacklen;
-  void(*generator)(char **json,
-                   uint8_t **msgpack,
-                   size_t *msgpacklen,
-                   size_t size); 
-  size_t generator_size;
-} fixtures[] = {
+const struct fixture fixtures[] = {
 
 #define F(j, ...) {                                          \
   .json = j,                                                 \
@@ -696,4 +693,4 @@ struct fixture {
   F("-1", 0xff),
 };
 
-int fixture_count = ARRAY_SIZE(fixtures);
+const int fixture_count = ARRAY_SIZE(fixtures);
