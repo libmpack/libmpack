@@ -62,6 +62,11 @@ coverage:
 		cd build && \
 		find obj/$(arch)/coverage/mpack -type f -name '*.o' -print0 | xargs -0 gcov
 
+profile:
+	$(MAKE) config=profile arch=$(arch) test && \
+		gprof build/bin/$(arch)/profile/mpack-test gmon.out > gprof.txt && \
+		rm gmon.out && echo profiler output in gprof.txt
+
 test: test-bin
 	./build/bin/$(arch)/$(config)/mpack-test
 

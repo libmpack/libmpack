@@ -1,5 +1,7 @@
 workspace 'mpack'
-  configurations {'debug', 'asan', 'ubsan', 'msan', 'coverage', 'release'}
+  configurations {
+    'debug', 'asan', 'ubsan', 'msan', 'coverage', 'profile', 'release'
+  }
   platforms {'x64', 'x32'}
   language 'C'
   location 'build'
@@ -13,7 +15,7 @@ workspace 'mpack'
   filter 'platforms:x32'
     architecture 'x32'
 
-  filter {'configurations:debug or *san or coverage'}
+  filter {'configurations:debug or *san or coverage or profile'}
     defines 'DEBUG'
     optimize 'Off'
     flags {'Symbols'}
@@ -36,6 +38,10 @@ workspace 'mpack'
   filter {'configurations:release'}
     optimize 'Speed'
     flags {'FatalWarnings'}
+
+  filter {'configurations:profile'}
+    buildoptions {'-pg'}
+    linkoptions {'-pg'}
 
   project 'mpack'
     kind 'StaticLib'

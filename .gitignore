@@ -1,3 +1,5 @@
 /build/
 /.deps/
 local.mk
+gprof.txt
+gmon.out
