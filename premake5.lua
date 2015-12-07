@@ -28,7 +28,10 @@ workspace 'mpack'
     linkoptions {'-fsanitize=address'}
 
   filter {'configurations:ubsan'}
-    buildoptions {'-fsanitize=undefined', '-fno-sanitize-recover'}
+    buildoptions {
+      '-fsanitize=undefined', '-fno-sanitize-recover',
+      '-fsanitize-blacklist=../.ubsan-blacklist'
+    }
     linkoptions {'-fsanitize=undefined'}
 
   filter {'configurations:msan'}

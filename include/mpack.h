@@ -92,4 +92,26 @@ struct mpack_unpacker_s {
   mpack_unpack_state_t stack[MPACK_DEFAULT_STACK_SIZE];
 };
 
+void mpack_pack_nil(char **b, size_t *bl);
+void mpack_pack_boolean(char **b, size_t *bl, mpack_uint32_t v);
+void mpack_pack_uint32(char **b, size_t *bl, mpack_uint32_t v);
+void mpack_pack_int32(char **b, size_t *bl, mpack_int32_t v);
+void mpack_pack_uint64(char **b, size_t *bl, mpack_value_t v);
+void mpack_pack_int64(char **b, size_t *bl, mpack_value_t v);
+void mpack_pack_float(char **b, size_t *bl, double v);
+void mpack_pack_str(char **b, size_t *bl, mpack_uint32_t l);
+void mpack_pack_bin(char **b, size_t *bl, mpack_uint32_t l);
+void mpack_pack_ext(char **b, size_t *bl, int t, mpack_uint32_t l);
+void mpack_pack_array(char **b, size_t *bl, mpack_uint32_t l);
+void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
+#ifdef MPACK_USE_64INT
+# define mpack_pack_uint(b, bl, v) \
+    mpack_pack_uint64(b, bl, (mpack_value_t){.u64 = v})
+# define mpack_pack_int(b, bl, v) \
+    mpack_pack_int64(b, bl, (mpack_value_t){.s64 = v})
+#else
+# define mpack_pack_uint(b, bl, v) mpack_pack_uint32(b, bl, v)
+# define mpack_pack_int(b, bl, v) mpack_pack_int32(b, bl, v)
+#endif
+
 #endif  /* MPACK_H */

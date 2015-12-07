@@ -1,0 +1,2 @@
+# use double->float cast to determine if a double can fit into a float 32
+fun:mpack_pack_float

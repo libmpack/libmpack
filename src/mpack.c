@@ -8,6 +8,12 @@
 #ifndef MIN
 # define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #endif
+#define MPACK_SWAP_VALUE(val)                                  \
+  do {                                                         \
+    mpack_uint32_t lo = val.components.lo;                     \
+    val.components.lo = val.components.hi;                     \
+    val.components.hi = lo;                                    \
+  } while (0)
 
 enum {
   UNPACK_TYPE,
@@ -39,6 +45,10 @@ static mpack_unpack_state_t *top(mpack_unpacker_t *unpacker);
 /* misc */
 static mpack_value_t byte(mpack_unpacker_t *u, unsigned char b);
 static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t);
+/* pack helpers */
+static void pack1(char **b, size_t *bl, mpack_uint32_t v);
+static void pack2(char **b, size_t *bl, mpack_uint32_t v);
+static void pack4(char **b, size_t *bl, mpack_uint32_t v);
 
 void mpack_unpacker_init(mpack_unpacker_t *unpacker)
 {
@@ -73,6 +83,195 @@ mpack_token_t *mpack_unpack(mpack_unpacker_t *unpacker, const char **buf,
   } while (!unpacker->result && !unpacker->error_code && *buflen); 
 
   return unpacker->result;
+}
+
+void mpack_pack_nil(char **buf, size_t *buflen)
+{
+  pack1(buf, buflen, 0xc0);
+}
+
+void mpack_pack_boolean(char **buf, size_t *buflen, mpack_uint32_t val)
+{
+  pack1(buf, buflen, val ? 0xc3 : 0xc2);
+}
+
+void mpack_pack_uint32(char **buf, size_t *buflen, mpack_uint32_t val)
+{
+  if (val < 0x80) {
+    pack1(buf, buflen, val);
+  } else if (val < 0x100) {
+    pack1(buf, buflen, 0xcc);
+    pack1(buf, buflen, val);
+  } else if (val < 0x10000) {
+    pack1(buf, buflen, 0xcd);
+    pack2(buf, buflen, val);
+  } else {
+    pack1(buf, buflen, 0xce);
+    pack4(buf, buflen, val);
+  }
+}
+
+void mpack_pack_int32(char **buf, size_t *buflen, mpack_int32_t v)
+{
+  mpack_uint32_t val = (mpack_uint32_t)v;
+  if (v > -1) {
+    mpack_pack_uint32(buf, buflen, val);
+  } else if (v > -0x21) {
+    pack1(buf, buflen, (mpack_uint32_t)(0x100 + v));
+  } else if (v > -0x81) {
+    pack1(buf, buflen, 0xd0);
+    pack1(buf, buflen, val);
+  } else if (v > -0x8001) {
+    pack1(buf, buflen, 0xd1);
+    pack2(buf, buflen, val);
+  } else {
+    pack1(buf, buflen, 0xd2);
+    pack4(buf, buflen, val);
+  }
+}
+
+void mpack_pack_uint64(char **buf, size_t *buflen, mpack_value_t val)
+{
+  if (MPACK_BIG_ENDIAN) {
+    MPACK_SWAP_VALUE(val);
+  }
+
+  if (!val.components.hi) {
+    /* fits into smaller uint */
+    mpack_pack_uint32(buf, buflen, val.components.lo);
+  } else {
+    pack1(buf, buflen, 0xcf);
+    pack4(buf, buflen, val.components.hi);
+    pack4(buf, buflen, val.components.lo);
+  }
+}
+
+void mpack_pack_int64(char **buf, size_t *buflen, mpack_value_t val)
+{
+  if (MPACK_BIG_ENDIAN) {
+    MPACK_SWAP_VALUE(val);
+  }
+
+  if (val.components.hi > 0x7fffffff) {
+    /* negative */
+    if (val.components.lo > 0x7fffffff) {
+      /* fits into smaller int */
+      mpack_pack_int32(buf, buflen, (mpack_int32_t)val.components.lo);
+    } else {
+      pack1(buf, buflen, 0xd3);
+      pack4(buf, buflen, val.components.hi);
+      pack4(buf, buflen, val.components.lo);
+    }
+  } else {
+    if (MPACK_BIG_ENDIAN) {
+      MPACK_SWAP_VALUE(val);
+    }
+    mpack_pack_uint64(buf, buflen, val);
+  }
+}
+
+void mpack_pack_float(char **buf, size_t *buflen, double val)
+{
+  if (((double)(float)val) == (double)val) {
+    union {
+      float f;
+      mpack_uint32_t u;
+    } flt;
+    flt.f = (float)val;
+    pack1(buf, buflen, 0xca);
+    pack4(buf, buflen, flt.u);
+  } else {
+    mpack_value_t v;
+    v.f64 = (double)val;
+    pack1(buf, buflen, 0xcb);
+    pack4(buf, buflen, v.components.hi);
+    pack4(buf, buflen, v.components.lo);
+  }
+}
+
+void mpack_pack_str(char **buf, size_t *buflen, mpack_uint32_t len)
+{
+  if (len < 0x20) {
+    pack1(buf, buflen, 0xa0 | len);
+  } else if (len < 0x100) {
+    pack1(buf, buflen, 0xd9);
+    pack1(buf, buflen, len);
+  } else if (len < 0x10000) {
+    pack1(buf, buflen, 0xda);
+    pack2(buf, buflen, len);
+  } else {
+    pack1(buf, buflen, 0xdb);
+    pack4(buf, buflen, len);
+  }
+}
+
+void mpack_pack_bin(char **buf, size_t *buflen, mpack_uint32_t len)
+{
+  if (len < 0x100) {
+    pack1(buf, buflen, 0xc4);
+    pack1(buf, buflen, len);
+  } else if (len < 0x10000) {
+    pack1(buf, buflen, 0xc5);
+    pack2(buf, buflen, len);
+  } else {
+    pack1(buf, buflen, 0xc6);
+    pack4(buf, buflen, len);
+  }
+}
+
+void mpack_pack_ext(char **buf, size_t *buflen, int type, mpack_uint32_t len)
+{
+  mpack_uint32_t t;
+  assert(type >= 0 && type < 0x80);
+  t = (mpack_uint32_t)type;
+  switch (len) {
+    case 1: pack1(buf, buflen, 0xd4); pack1(buf, buflen, t); break;
+    case 2: pack1(buf, buflen, 0xd5); pack1(buf, buflen, t); break;
+    case 4: pack1(buf, buflen, 0xd6); pack1(buf, buflen, t); break;
+    case 8: pack1(buf, buflen, 0xd7); pack1(buf, buflen, t); break;
+    case 16: pack1(buf, buflen, 0xd8); pack1(buf, buflen, t); break;
+    default:
+      if (len < 0x100) {
+        pack1(buf, buflen, 0xc7);
+        pack1(buf, buflen, len);
+        pack1(buf, buflen, t);
+      } else if (len < 0x10000) {
+        pack1(buf, buflen, 0xc8);
+        pack2(buf, buflen, len);
+        pack1(buf, buflen, t);
+      } else {
+        pack1(buf, buflen, 0xc9);
+        pack4(buf, buflen, len);
+        pack1(buf, buflen, t);
+      }
+      break;
+  }
+}
+
+void mpack_pack_array(char **buf, size_t *buflen, mpack_uint32_t len)
+{
+  if (len < 0x10) {
+    pack1(buf, buflen, 0x90 | len);
+  } else if (len < 0x10000) {
+    pack1(buf, buflen, 0xdc);
+    pack2(buf, buflen, len);
+  } else {
+    pack1(buf, buflen, 0xdd);
+    pack4(buf, buflen, len);
+  }
+}
+
+void mpack_pack_map(char **buf, size_t *buflen, mpack_uint32_t len)
+{
+  if (len < 0x10) {
+    pack1(buf, buflen, 0x80 | len);
+  } else if (len < 0x10000) {
+    pack1(buf, buflen, 0xde);
+    pack2(buf, buflen, len);
+  } else {
+    pack1(buf, buflen, 0xdf);
+    pack4(buf, buflen, len);
+  }
 }
 
 static void unpack_type(mpack_unpacker_t *unpacker, const char **buf,
@@ -391,3 +590,24 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
   }
 }
 
+static void pack1(char **b, size_t *bl, mpack_uint32_t v)
+{
+  assert(*bl); (*bl)--;
+  *(*b)++ = (char)(v & 0xff);
+}
+
+static void pack2(char **b, size_t *bl, mpack_uint32_t v)
+{
+  assert(*bl > 1); *bl -= 2;
+  *(*b)++ = (char)((v >> 8) & 0xff);
+  *(*b)++ = (char)(v & 0xff);
+}
+
+static void pack4(char **b, size_t *bl, mpack_uint32_t v)
+{
+  assert(*bl > 3); *bl -= 4;
+  *(*b)++ = (char)((v >> 24) & 0xff);
+  *(*b)++ = (char)((v >> 16) & 0xff);
+  *(*b)++ = (char)((v >> 8) & 0xff);
+  *(*b)++ = (char)(v & 0xff);
+}

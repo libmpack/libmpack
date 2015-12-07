@@ -132,6 +132,127 @@ static void process_token(mpack_token_t *t)
   }
 }
 
+static uint32_t item_count(const char *s)
+{
+  size_t depth = 1;
+  uint32_t count = 0; 
+  while (depth) {
+    int c = *s++;
+    if (c == ' ') continue;
+    else if (c == ']' || c == '}') depth--;
+    else if (c == '[' || c == '{') depth++;
+    else if (depth == 1 && c == ',') count++;
+    else if (count == 0) count = 1;
+  }
+  return count;
+}
+
+void parse_json(char **buf, size_t *buflen, char **s)
+{
+  while (**s == ' ' || **s == ',') {
+    (*s)++;
+  }
+
+  switch (**s) {
+    case 'n':
+      mpack_pack_nil(buf, buflen);
+      *s += 4;
+      break;
+    case 'f':
+      *s += 5;
+      mpack_pack_boolean(buf, buflen, false);
+      break;
+    case 't':
+      *s += 4;
+      mpack_pack_boolean(buf, buflen, true);
+      break;
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+    case '.':
+    case '+':
+    case '-': {
+      char *s2 = *s;
+      double d = strtod(*s, &s2);
+      size_t l = (size_t)(s2 - *s);
+      char tmp[256];
+      memcpy(tmp, *s, l);
+      tmp[l] = 0;
+      *s = s2;
+      if (strchr(tmp, '.') || strchr(tmp, 'e')) {
+        mpack_pack_float(buf, buflen, d);
+      } else {
+        mpack_pack_int(buf, buflen, strtoll(tmp, NULL, 10));
+      }
+      break;
+    }
+    case '"': {
+      (*s)++;
+      char *s2 = strchr(*s, '"');
+      mpack_uint32_t len = (mpack_uint32_t)(s2 - *s);
+      switch (**s) {
+        case 's':
+          mpack_pack_str(buf, buflen, len - 2);
+          memcpy(*buf, *s + 2, len - 2);
+          *buf += len - 2;
+          *buflen -= len - 2;
+          break;
+        case 'b':
+          mpack_pack_bin(buf, buflen, len - 2);
+          memcpy(*buf, *s + 2, len - 2);
+          *buf += len - 2;
+          *buflen -= len - 2;
+          break;
+        case 'e':
+          mpack_pack_ext(buf, buflen, (int)strtol(*s + 2, NULL, 16), len - 5);
+          memcpy(*buf, *s + 5, len - 5);
+          *buf += len - 5;
+          *buflen -= len - 5;
+          break;
+        default:
+          mpack_pack_str(buf, buflen, len);
+          memcpy(*buf, *s, len);
+          *buf += len;
+          *buflen -= len;
+          break;
+      }
+      *s = s2 + 1;
+      break;
+    }
+    case '[': {
+      (*s)++;
+      mpack_pack_array(buf, buflen, item_count(*s));
+      while (**s != ']') {
+        parse_json(buf, buflen, s);
+      }
+      (*s)++;
+      break;
+    }
+    case '{': {
+      (*s)++;
+      mpack_pack_map(buf, buflen, item_count(*s));
+      while (**s != '}') {
+        parse_json(buf, buflen, s);
+        (*s)++;
+        parse_json(buf, buflen, s);
+      }
+      (*s)++;
+      break;
+    }
+    default: abort();
+  }
+  while (**s == ' ') {
+    (*s)++;
+  }
+} 
+
 static void unpack_buf(const char *buf, size_t buflen)
 {
   while (!data.done && buflen) {
@@ -147,7 +268,7 @@ static void unpack_buf(const char *buf, size_t buflen)
   static const size_t chunksizes[] =
      {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 30, 60, SIZE_MAX};
 
-static void unpack_test(int fixture_idx)
+static void fixture_test(int fixture_idx)
 {
   const struct fixture *f = fixtures + fixture_idx;
   char *fjson;
@@ -161,6 +282,7 @@ static void unpack_test(int fixture_idx)
     fmsgpacklen = f->msgpacklen;
   }
 
+  /* unpacking test */
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     size_t cs = chunksizes[i];
     data.stackpos = 0;
@@ -176,13 +298,44 @@ static void unpack_test(int fixture_idx)
     is(data.buf, fjson, "fixture %d unpack with chunksize of %zu",
         fixture_idx, cs);
   }
+  /* packing test */
+  char *b = data.buf;
+  size_t bl = sizeof(data.buf);
+  char *j = fjson;
+  parse_json(&b, &bl, &j);
+  cmp_mem(data.buf, fmsgpack, fmsgpacklen, "fixture %d pack", fixture_idx);
+}
+
+static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
+{
+  char mpackbuf[256];
+  char *buf = mpackbuf;
+  size_t buflen = sizeof(mpackbuf);
+  mpack_pack_int32(&buf, &buflen, 0);
+  mpack_pack_int32(&buf, &buflen, 1);
+  mpack_pack_int32(&buf, &buflen, 0x7f);
+  mpack_pack_int32(&buf, &buflen, 0xff);
+  mpack_pack_int32(&buf, &buflen, 0xffff);
+  mpack_pack_int(&buf, &buflen, 0xffffffff);
+  mpack_pack_int(&buf, &buflen, 0x7fffffffffffffff);
+  uint8_t expected[] = {
+    0x00,
+    0x01,
+    0x7f,
+    0xcc, 0xff,
+    0xcd, 0xff, 0xff,
+    0xce, 0xff, 0xff, 0xff, 0xff,
+    0xcf, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+  };
+  cmp_mem(mpackbuf, expected, sizeof(mpackbuf) - buflen, "packs as positive");
 }
 
 int main(void)
 {
-  plan(fixture_count * (int)ARRAY_SIZE(chunksizes));
+  plan(fixture_count * (int)ARRAY_SIZE(chunksizes) + fixture_count + 1);
   for (int i = 0; i < fixture_count; i++) {
-    unpack_test(i);
+    fixture_test(i);
   }
+  positive_integer_passed_to_mpack_int_packs_as_positive();
   done_testing();
 }
