@@ -172,12 +172,12 @@ static void unpack_value(mpack_unpacker_t *unpacker, const char **buf,
     mpack_uint32_t byte = ADVANCE(buf, buflen), byte_idx, byte_shift;
     byte_idx = (mpack_uint32_t)--t->remaining;
     byte_shift = (byte_idx % 4) * 8;
-    t->token.data.value.lo |= byte << byte_shift;
+    t->token.data.value.components.lo |= byte << byte_shift;
     if (t->remaining == 4) {
       /* unpacked the first half of a 8-byte value, shift what was parsed to the
        * "hi" field and reset "lo" for the trailing 4 bytes. */
-      t->token.data.value.hi = t->token.data.value.lo;
-      t->token.data.value.lo = 0;
+      t->token.data.value.components.hi = t->token.data.value.components.lo;
+      t->token.data.value.components.lo = 0;
     }
   } while (*buflen && t->remaining);
 
@@ -192,8 +192,8 @@ static void unpack_value(mpack_unpacker_t *unpacker, const char **buf,
     /* internal value unpacking to get the length of a container or byte array.
      * note that msgpack only allows 32-bit sizes for arrays/maps/strings, so
      * the entire value will be contained in the "lo" field. */
-    t->remaining = t->token.data.value.lo;
-    assert(!t->token.data.value.hi);
+    t->remaining = t->token.data.value.components.lo;
+    assert(!t->token.data.value.components.hi);
     if (t->token.type > MPACK_TOKEN_EXT) {
       if (t->token.type == MPACK_TOKEN_MAP) {
         t->remaining *= 2;
@@ -320,11 +320,11 @@ static mpack_value_t byte(mpack_unpacker_t *unpacker, unsigned char byte)
   mpack_value_t rv;
   UNUSED(unpacker);
   if (MPACK_BIG_ENDIAN) {
-    rv.lo = 0;
-    rv.hi = byte;
+    rv.components.lo = 0;
+    rv.components.hi = byte;
   } else {
-    rv.lo = byte;
-    rv.hi = 0;
+    rv.components.lo = byte;
+    rv.components.hi = 0;
   }
   return rv;
 }
@@ -344,14 +344,14 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
     /* the `unpack_value` function will read bytes in reverse since most
      * machines are little endian. if that's not the case, swap the bytes back
      * to network order */
-    t->data.value.lo = bswap(t->data.value.lo);
-    t->data.value.hi = bswap(t->data.value.hi);
+    t->data.value.components.lo = bswap(t->data.value.components.lo);
+    t->data.value.components.hi = bswap(t->data.value.components.hi);
     if (t->type == MPACK_TOKEN_FLOAT) {
       /* for 8-byte floating points we invert hi and lo so that the f64 field
        * of the token will contain the correct value. */
-      mpack_uint32_t lo = t->data.value.lo;
-      t->data.value.lo = t->data.value.hi;
-      t->data.value.hi = lo;
+      mpack_uint32_t lo = t->data.value.components.lo;
+      t->data.value.components.lo = t->data.value.components.hi;
+      t->data.value.components.hi = lo;
     }
   }
 
@@ -374,10 +374,10 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
       float f;
       mpack_uint32_t u;
     } flt;
-    flt.u = t->data.value.lo;
-    t->data.f64 = flt.f;
+    flt.u = t->data.value.components.lo;
+    t->data.value.f64 = flt.f;
   } else if (t->type == MPACK_TOKEN_SINT) {
-    mpack_uint32_t w = t->data.value.lo;
+    mpack_uint32_t w = t->data.value.components.lo;
     size_t l = t->length;
     if ((l == 1 && w > 0x7f)
         || (l == 2 && w > 0x7fff)
@@ -385,8 +385,8 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
       /* negative integer of up to 32-bits, convert to 64-bit by filling all
        * the left bytes with 0xff */
       mpack_uint32_t fill = 0xffffff00 << ((l - 1) * 8);
-      t->data.value.lo = fill + w;
-      t->data.value.hi = 0xffffffff;
+      t->data.value.components.lo = fill + w;
+      t->data.value.components.hi = 0xffffffff;
     }
   }
 }

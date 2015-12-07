@@ -13,10 +13,29 @@ typedef unsigned long mpack_uint32_t;
 # error "can't find unsigned 32-bit integer type"
 #endif
 
+#if ULLONG_MAX == 0xffffffffffffffff
+# define MPACK_USE_64INT
+typedef long long mpack_int64_t;
+typedef unsigned long long mpack_uint64_t;
+#elif UINT64_MAX == 0xffffffffffffffff
+# define MPACK_USE_64INT
+typedef int64_t mpack_int64_t;
+typedef uint64_t mpack_uint64_t;
+#endif
+
 #define MPACK_BIG_ENDIAN (*(mpack_uint32_t *)"\xff\0\0\0" == 0xff000000)
 
-typedef struct mpack_value_s {
-  mpack_uint32_t lo, hi;
+typedef union {
+  double f64;
+#ifdef MPACK_USE_64INT
+  mpack_uint64_t u64;
+  mpack_int64_t s64;
+#endif
+  mpack_uint32_t u32;
+  mpack_int32_t s32;
+  struct {
+    mpack_uint32_t lo, hi;
+  } components;
 } mpack_value_t;
 
 #include <stddef.h>
@@ -24,15 +43,6 @@ typedef struct mpack_value_s {
 #ifndef MPACK_DEFAULT_STACK_SIZE
 # define MPACK_DEFAULT_STACK_SIZE 32
 #endif  /* MPACK_STACK_MAX_SIZE */
-
-#define MPACK_FLOAT(t) ((float)MPACK_DOUBLE(t))
-#define MPACK_DOUBLE(t) (t->data.f64)
-#define MPACK_INT32(t) ((mpack_int32_t)MPACK_UINT32(t))
-#define MPACK_UINT32(t) (t->data.value.lo)
-#define MPACK_INT64(t) ((int64_t)MPACK_UINT64(t))
-#define MPACK_UINT64(t) (                 \
-  (((uint64_t)t->data.value.hi) << 32) |  \
-  ((uint64_t)t->data.value.lo))
 
 typedef enum {
   MPACK_TOKEN_NIL,
@@ -55,7 +65,6 @@ typedef struct mpack_token_s {
                                Item count for array/map. */
   union {
     mpack_value_t value;    /* 32-bit parts of primitives (bool,int,float) */
-    double f64;
     const char *chunk_ptr;  /* Chunk of data from str/bin/ext */
     int ext_type;           /* Type field for ext tokens */
   } data;

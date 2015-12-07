@@ -71,15 +71,15 @@ static void process_token(mpack_token_t *t)
     case MPACK_TOKEN_NIL:
       w("null"); pop(1); break;
     case MPACK_TOKEN_BOOLEAN:
-      w(MPACK_INT32(t) ? "true" : "false"); pop(1); break;
+      w(t->data.value.u64 ? "true" : "false"); pop(1); break;
     case MPACK_TOKEN_UINT:
-      w("%" PRIu64, MPACK_UINT64(t)); pop(1); break;
+      w("%" PRIu64, t->data.value.u64); pop(1); break;
     case MPACK_TOKEN_SINT:
-      w("%" PRId64, MPACK_INT64(t)); pop(1); break;
+      w("%" PRId64, t->data.value.s64); pop(1); break;
     case MPACK_TOKEN_FLOAT:
-      w("%.*g", 17, MPACK_DOUBLE(t)); pop(1);
-      if (round(MPACK_DOUBLE(t)) == MPACK_DOUBLE(t)
-          && (fabs(MPACK_DOUBLE(t)) < 10e3)) {
+      w("%.*g", 17, t->data.value.f64); pop(1);
+      if (round(t->data.value.f64) == t->data.value.f64
+          && (fabs(t->data.value.f64) < 10e3)) {
         /* Need a trailing .0 to be parsed as float in the packer tests */
         w(".0");
       }
