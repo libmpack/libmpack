@@ -43,9 +43,6 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t);
 void mpack_unpacker_init(mpack_unpacker_t *unpacker)
 {
   assert(unpacker);
-  /* endianess flag to unpack numbers correctly */
-  unpacker->le = 1;
-  unpacker->le = *(char *)&unpacker->le;
   /* stack/error initialization */
   unpacker->stackpos = 0;
   unpacker->error_code = 0;
@@ -321,12 +318,13 @@ static mpack_unpack_state_t *top(mpack_unpacker_t *unpacker)
 static mpack_value_t byte(mpack_unpacker_t *unpacker, unsigned char byte)
 {
   mpack_value_t rv;
-  if (unpacker->le) {
-    rv.lo = byte;
-    rv.hi = 0;
-  } else {
+  UNUSED(unpacker);
+  if (MPACK_BIG_ENDIAN) {
     rv.lo = 0;
     rv.hi = byte;
+  } else {
+    rv.lo = byte;
+    rv.hi = 0;
   }
   return rv;
 }
@@ -341,7 +339,8 @@ static mpack_uint32_t bswap(mpack_uint32_t i)
 
 static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
 {
-  if (!unpacker->le) {
+  UNUSED(unpacker);
+  if (MPACK_BIG_ENDIAN) {
     /* the `unpack_value` function will read bytes in reverse since most
      * machines are little endian. if that's not the case, swap the bytes back
      * to network order */

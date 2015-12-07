@@ -13,6 +13,8 @@ typedef unsigned long mpack_uint32_t;
 # error "can't find unsigned 32-bit integer type"
 #endif
 
+#define MPACK_BIG_ENDIAN (*(mpack_uint32_t *)"\xff\0\0\0" == 0xff000000)
+
 typedef struct mpack_value_s {
   mpack_uint32_t lo, hi;
 } mpack_value_t;
@@ -77,7 +79,7 @@ struct mpack_unpacker_s {
   void *data;
   mpack_token_t *result;
   size_t stackpos;
-  int error_code, le;
+  int error_code;
   mpack_unpack_state_t stack[MPACK_DEFAULT_STACK_SIZE];
 };
 
