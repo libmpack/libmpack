@@ -265,8 +265,7 @@ static void unpack_buf(const char *buf, size_t buflen)
 
 /* Each unpack test is executed multiple times, with each feeding data in
  * chunks of different sizes. */
-  static const size_t chunksizes[] =
-     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 30, 60, SIZE_MAX};
+static const size_t chunksizes[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, SIZE_MAX};
 
 static void fixture_test(int fixture_idx)
 {

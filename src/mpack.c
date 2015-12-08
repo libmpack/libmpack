@@ -8,6 +8,7 @@
 #ifndef MIN
 # define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #endif
+#define MPACK_BIG_ENDIAN (*(mpack_uint32_t *)"\xff\0\0\0" == 0xff000000)
 #define MPACK_SWAP_VALUE(val)                                  \
   do {                                                         \
     mpack_uint32_t lo = val.components.lo;                     \
@@ -133,6 +134,7 @@ void mpack_pack_int32(char **buf, size_t *buflen, mpack_int32_t v)
 void mpack_pack_uint64(char **buf, size_t *buflen, mpack_value_t val)
 {
   if (MPACK_BIG_ENDIAN) {
+    /* swap for checking hi/lo */
     MPACK_SWAP_VALUE(val);
   }
 
@@ -149,6 +151,7 @@ void mpack_pack_uint64(char **buf, size_t *buflen, mpack_value_t val)
 void mpack_pack_int64(char **buf, size_t *buflen, mpack_value_t val)
 {
   if (MPACK_BIG_ENDIAN) {
+    /* swap for checking hi/lo */
     MPACK_SWAP_VALUE(val);
   }
 
@@ -164,6 +167,7 @@ void mpack_pack_int64(char **buf, size_t *buflen, mpack_value_t val)
     }
   } else {
     if (MPACK_BIG_ENDIAN) {
+      /* mpack_pack_uint64 already swaps, so we need to swap back */
       MPACK_SWAP_VALUE(val);
     }
     mpack_pack_uint64(buf, buflen, val);
@@ -184,6 +188,9 @@ void mpack_pack_float(char **buf, size_t *buflen, double val)
     mpack_value_t v;
     v.f64 = (double)val;
     pack1(buf, buflen, 0xcb);
+    if (MPACK_BIG_ENDIAN) {
+      MPACK_SWAP_VALUE(v);
+    }
     pack4(buf, buflen, v.components.hi);
     pack4(buf, buflen, v.components.lo);
   }
@@ -387,7 +394,6 @@ static void unpack_value(mpack_unpacker_t *unpacker, const char **buf,
 
   pop_state(unpacker);
   if (t->token.type > MPACK_TOKEN_CHUNK) {
-    convert_value(unpacker, &t->token);
     /* internal value unpacking to get the length of a container or byte array.
      * note that msgpack only allows 32-bit sizes for arrays/maps/strings, so
      * the entire value will be contained in the "lo" field. */
@@ -518,47 +524,20 @@ static mpack_value_t byte(mpack_unpacker_t *unpacker, unsigned char byte)
 {
   mpack_value_t rv;
   UNUSED(unpacker);
-  if (MPACK_BIG_ENDIAN) {
-    rv.components.lo = 0;
-    rv.components.hi = byte;
-  } else {
-    rv.components.lo = byte;
-    rv.components.hi = 0;
-  }
+  rv.components.lo = byte;
+  rv.components.hi = 0;
   return rv;
-}
-
-static mpack_uint32_t bswap(mpack_uint32_t i)
-{
-  return ((i & 0x000000ff) << 24) |
-         ((i & 0x0000ff00) << 8)  |
-         ((i & 0x00ff0000) >> 8)  |
-         ((i & 0xff000000) >> 24);
 }
 
 static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
 {
   UNUSED(unpacker);
-  if (MPACK_BIG_ENDIAN) {
-    /* the `unpack_value` function will read bytes in reverse since most
-     * machines are little endian. if that's not the case, swap the bytes back
-     * to network order */
-    t->data.value.components.lo = bswap(t->data.value.components.lo);
-    t->data.value.components.hi = bswap(t->data.value.components.hi);
-    if (t->type == MPACK_TOKEN_FLOAT) {
-      /* for 8-byte floating points we invert hi and lo so that the f64 field
-       * of the token will contain the correct value. */
-      mpack_uint32_t lo = t->data.value.components.lo;
-      t->data.value.components.lo = t->data.value.components.hi;
-      t->data.value.components.hi = lo;
-    }
-  }
 
   if (t->length == 8) {
-    return;
+    goto beswap;
   }
 
-  /* to simplify API, convert floats and negative integers of 32-bit or less to
+  /* To simplify API, convert floats and negative integers of 32-bit or less to
    * their 64-bit equivalent. for these conversions to work, the following
    * assumptions are made:
    *
@@ -575,6 +554,8 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
     } flt;
     flt.u = t->data.value.components.lo;
     t->data.value.f64 = flt.f;
+    return;  /* no need to swap in this case as f64 already
+                contains the correct value */
   } else if (t->type == MPACK_TOKEN_SINT) {
     mpack_uint32_t w = t->data.value.components.lo;
     size_t l = t->length;
@@ -587,6 +568,11 @@ static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
       t->data.value.components.lo = fill + w;
       t->data.value.components.hi = 0xffffffff;
     }
+  }
+
+beswap:
+  if (MPACK_BIG_ENDIAN) {
+    MPACK_SWAP_VALUE(t->data.value);
   }
 }
 

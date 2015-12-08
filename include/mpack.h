@@ -23,8 +23,6 @@ typedef int64_t mpack_int64_t;
 typedef uint64_t mpack_uint64_t;
 #endif
 
-#define MPACK_BIG_ENDIAN (*(mpack_uint32_t *)"\xff\0\0\0" == 0xff000000)
-
 typedef union {
   double f64;
 #ifdef MPACK_USE_64INT
