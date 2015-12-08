@@ -67,7 +67,7 @@ profile:
 		rm gmon.out && echo profiler output in gprof.txt
 
 test: test-bin
-	./build/bin/$(config)/mpack-test
+	$(RUNNER) ./build/bin/$(config)/mpack-test
 
 gdb: test-bin
 	gdb -x .gdb ./build/bin/$(config)/mpack-test

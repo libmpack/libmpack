@@ -22,12 +22,19 @@ matrix:
           packages:
             - gcc-multilib
     - os: linux
-      env: CONFIG=coverage
       compiler: gcc
-      before_install:
+      env:
+        - CONFIG=coverage 
+        - RUNNER=.deps/usr/bin/qemu-armeb
+      addons:
+        apt:
+          packages:
+            - qemu-user-static
+      install:
         - pip install --user cpp-coveralls
+        - . .ci/arm_test_setup.sh
       after_success:
-        - coveralls -b build --gcov-options '\-lp'
+        - coveralls -b build --gcov $(pwd)/.deps/usr/bin/armeb-linux-gnueabihf-gcov --gcov-options '\-lp'
     - os: osx
       env: CONFIG=release
       compiler: clang
