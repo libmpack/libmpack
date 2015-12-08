@@ -3,8 +3,6 @@ language: c
 compiler: clang
 
 env:
-  global:
-    - ARCH=x64
   matrix:
     - CONFIG=asan
     - CONFIG=msan
@@ -18,7 +16,7 @@ os:
 matrix:
   include:
     - os: linux
-      env: CONFIG=release ARCH=x32
+      env: CONFIG=release CFLAGS=-m32 LDFLAGS=-m32
       addons:
         apt:
           packages:
@@ -37,7 +35,7 @@ matrix:
     - os: osx
 
 script:
-  make config=${CONFIG} arch=${ARCH} test
+  make config=${CONFIG} test
 
 cache:
   directories:

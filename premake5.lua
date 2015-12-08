@@ -2,18 +2,11 @@ workspace 'mpack'
   configurations {
     'debug', 'asan', 'ubsan', 'msan', 'coverage', 'profile', 'release'
   }
-  platforms {'x64', 'x32'}
   language 'C'
   location 'build'
   includedirs 'include'
   flags {'ExtraWarnings'}
   buildoptions {'-Wconversion', '-Wstrict-prototypes', '-pedantic'}
-
-  filter 'platforms:x64'
-    architecture 'x64'
-
-  filter 'platforms:x32'
-    architecture 'x32'
 
   filter {'configurations:debug or *san or coverage or profile'}
     defines 'DEBUG'
@@ -71,7 +64,7 @@ workspace 'mpack'
     files {
       'test/*.c'
     }
-    buildoptions '-std=c99'
+    buildoptions {'-std=c99'}
     links {'m', 'mpack', 'tap'}
     filter {'configurations:coverage'}
       linkoptions {'--coverage'}

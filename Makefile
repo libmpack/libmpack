@@ -1,6 +1,5 @@
 config ?= debug
-arch ?= $(shell uname -m | grep 64 > /dev/null && echo x64 || echo x32)
-premake_config := $(config)_$(arch)
+premake_config := $(config)
 
 FETCH ?= curl -L -o -
 SYSTEM ?= $(shell uname -s)
@@ -58,20 +57,20 @@ export CK_FORK := no
 
 coverage:
 	find build/ -type f -name '*.gcda' -print0 | xargs -0 rm -f && \
-		$(MAKE) config=coverage arch=$(arch) test && \
+		$(MAKE) config=coverage test && \
 		cd build && \
-		find obj/$(arch)/coverage/mpack -type f -name '*.o' -print0 | xargs -0 gcov
+		find obj/coverage/mpack -type f -name '*.o' -print0 | xargs -0 gcov
 
 profile:
-	$(MAKE) config=profile arch=$(arch) test && \
-		gprof build/bin/$(arch)/profile/mpack-test gmon.out > gprof.txt && \
+	$(MAKE) config=profile test && \
+		gprof build/bin/profile/mpack-test gmon.out > gprof.txt && \
 		rm gmon.out && echo profiler output in gprof.txt
 
 test: test-bin
-	./build/bin/$(arch)/$(config)/mpack-test
+	./build/bin/$(config)/mpack-test
 
 gdb: test-bin
-	gdb -x .gdb ./build/bin/$(arch)/$(config)/mpack-test
+	gdb -x .gdb ./build/bin/$(config)/mpack-test
 
 test-bin: bin
 	cd build && $(MAKE) config=$(premake_config) mpack-test
