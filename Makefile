@@ -75,10 +75,10 @@ gdb: test-bin
 test-bin: bin
 	cd build && $(MAKE) config=$(premake_config) mpack-test
 
-bin: build
+bin: build/Makefile
 	cd build && $(MAKE) config=$(premake_config) mpack
 
-build: $(PREMAKE_BIN)
+build/Makefile: $(PREMAKE_BIN)
 	$(PREMAKE_BIN) gmake
 
 clean:
