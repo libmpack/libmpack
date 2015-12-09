@@ -43,7 +43,7 @@ workspace 'mpack'
     kind 'StaticLib'
     buildoptions {'-ansi'}
     files {
-      'src/*.c'
+      'src/mpack.c'
     }
     filter {'configurations:coverage'}
       buildoptions {'--coverage'}

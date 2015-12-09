@@ -45,11 +45,15 @@ static void pop_state(mpack_unpacker_t *u);
 static mpack_unpack_state_t *top(mpack_unpacker_t *unpacker);
 /* misc */
 static mpack_value_t byte(mpack_unpacker_t *u, unsigned char b);
-static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t);
+static void process_token(mpack_unpacker_t *unpacker, mpack_token_t *t);
+static void process_float_token(mpack_token_t *t);
+static void process_integer_token(mpack_token_t *t);
 /* pack helpers */
 static void pack1(char **b, size_t *bl, mpack_uint32_t v);
 static void pack2(char **b, size_t *bl, mpack_uint32_t v);
 static void pack4(char **b, size_t *bl, mpack_uint32_t v);
+static mpack_value_t pack_double(double v);
+static mpack_uint32_t pack_float(float v);
 
 void mpack_unpacker_init(mpack_unpacker_t *unpacker)
 {
@@ -177,20 +181,11 @@ void mpack_pack_int64(char **buf, size_t *buflen, mpack_value_t val)
 void mpack_pack_float(char **buf, size_t *buflen, double val)
 {
   if (((double)(float)val) == (double)val) {
-    union {
-      float f;
-      mpack_uint32_t u;
-    } flt;
-    flt.f = (float)val;
     pack1(buf, buflen, 0xca);
-    pack4(buf, buflen, flt.u);
+    pack4(buf, buflen, pack_float((float)val));
   } else {
-    mpack_value_t v;
-    v.f64 = (double)val;
+    mpack_value_t v = pack_double(val);
     pack1(buf, buflen, 0xcb);
-    if (MPACK_BIG_ENDIAN) {
-      MPACK_SWAP_VALUE(v);
-    }
     pack4(buf, buflen, v.components.hi);
     pack4(buf, buflen, v.components.lo);
   }
@@ -463,7 +458,7 @@ static void shift_value(mpack_unpacker_t *unpacker, mpack_token_type_t type,
   t->token.data.value = value;
   t->token.length = length;
   unpacker->result = &t->token;
-  convert_value(unpacker, unpacker->result);
+  process_token(unpacker, unpacker->result);
 }
 
 static void shift_chunk(mpack_unpacker_t *unpacker, const char *ptr,
@@ -529,53 +524,6 @@ static mpack_value_t byte(mpack_unpacker_t *unpacker, unsigned char byte)
   return rv;
 }
 
-static void convert_value(mpack_unpacker_t *unpacker, mpack_token_t *t)
-{
-  UNUSED(unpacker);
-
-  if (t->length == 8) {
-    goto beswap;
-  }
-
-  /* To simplify API, convert floats and negative integers of 32-bit or less to
-   * their 64-bit equivalent. for these conversions to work, the following
-   * assumptions are made:
-   *
-   * - the platform stores floats and doubles in IEEE 755 format
-   * - the platform stores negative integers with two's complement.
-   * - float and integer types have the same byte order.
-   *
-   * TODO: try to reduce these assumptions and improve portability. */
-  if (t->type == MPACK_TOKEN_FLOAT) {
-    /* convert single to double */
-    union {
-      float f;
-      mpack_uint32_t u;
-    } flt;
-    flt.u = t->data.value.components.lo;
-    t->data.value.f64 = flt.f;
-    return;  /* no need to swap in this case as f64 already
-                contains the correct value */
-  } else if (t->type == MPACK_TOKEN_SINT) {
-    mpack_uint32_t w = t->data.value.components.lo;
-    size_t l = t->length;
-    if ((l == 1 && w > 0x7f)
-        || (l == 2 && w > 0x7fff)
-        || (l == 4 && w > 0x7fffffff)) {
-      /* negative integer of up to 32-bits, convert to 64-bit by filling all
-       * the left bytes with 0xff */
-      mpack_uint32_t fill = 0xffffff00 << ((l - 1) * 8);
-      t->data.value.components.lo = fill + w;
-      t->data.value.components.hi = 0xffffffff;
-    }
-  }
-
-beswap:
-  if (MPACK_BIG_ENDIAN) {
-    MPACK_SWAP_VALUE(t->data.value);
-  }
-}
-
 static void pack1(char **b, size_t *bl, mpack_uint32_t v)
 {
   assert(*bl); (*bl)--;
@@ -597,3 +545,67 @@ static void pack4(char **b, size_t *bl, mpack_uint32_t v)
   *(*b)++ = (char)((v >> 8) & 0xff);
   *(*b)++ = (char)(v & 0xff);
 }
+
+static void process_token(mpack_unpacker_t *unpacker, mpack_token_t *t)
+{
+  UNUSED(unpacker);
+  if (t->type == MPACK_TOKEN_FLOAT) {
+    process_float_token(t);
+  } else if (t->type == MPACK_TOKEN_SINT || t->type == MPACK_TOKEN_UINT) {
+    process_integer_token(t);
+  }
+}
+
+static void process_integer_token(mpack_token_t *t)
+{
+  if (t->type == MPACK_TOKEN_SINT && t->length < 8) {
+    mpack_uint32_t w = t->data.value.components.lo;
+    size_t l = t->length;
+    if ((l == 1 && w > 0x7f)
+        || (l == 2 && w > 0x7fff)
+        || (l == 4 && w > 0x7fffffff)) {
+      mpack_uint32_t fill = 0xffffff00 << ((l - 1) * 8);
+      t->data.value.components.lo = fill + w;
+      t->data.value.components.hi = 0xffffffff;
+    }
+  }
+
+  if (MPACK_BIG_ENDIAN) {
+    MPACK_SWAP_VALUE(t->data.value);
+  }
+}
+
+#ifndef NO_NATIVE_IEEE754
+static void process_float_token(mpack_token_t *t)
+{
+  if (t->length < 8) {
+    union { float f; mpack_uint32_t u; } flt;
+    flt.u = t->data.value.components.lo;
+    t->data.value.f64 = flt.f;
+  } else if (MPACK_BIG_ENDIAN) {
+    MPACK_SWAP_VALUE(t->data.value);
+  }
+}
+
+static mpack_value_t pack_double(double v)
+{
+  mpack_value_t rv;
+  rv.f64 = v;
+  if (MPACK_BIG_ENDIAN) {
+    MPACK_SWAP_VALUE(rv);
+  }
+  return rv;
+}
+
+static mpack_uint32_t pack_float(float v)
+{
+  union {
+    float f;
+    mpack_uint32_t u;
+  } flt;
+  flt.f = v;
+  return flt.u;
+}
+#else
+#include "compat.c"
+#endif
