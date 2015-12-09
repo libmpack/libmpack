@@ -35,6 +35,23 @@ matrix:
         - . .ci/arm_test_setup.sh
       after_success:
         - coveralls -b build --gcov $(pwd)/.deps/usr/bin/armeb-linux-gnueabihf-gcov --gcov-options '\-lp'
+    - os: linux
+      compiler: gcc
+      env:
+        - CONFIG=release
+        - CFLAGS=-DNO_NATIVE_IEEE754 
+    - os: linux
+      compiler: gcc
+      env:
+        - CONFIG=release
+        - CFLAGS=-DNO_NATIVE_IEEE754 
+        - RUNNER=.deps/usr/bin/qemu-armeb
+      addons:
+        apt:
+          packages:
+            - qemu-user-static
+      install:
+        - . .ci/arm_test_setup.sh
     - os: osx
       env: CONFIG=release
       compiler: clang
