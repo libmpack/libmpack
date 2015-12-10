@@ -14,23 +14,18 @@ typedef unsigned long mpack_uint32_t;
 #endif
 
 #if ULLONG_MAX == 0xffffffffffffffff
-# define MPACK_USE_64INT
-typedef long long mpack_int64_t;
-typedef unsigned long long mpack_uint64_t;
+typedef long long mpack_intmax_t;
+typedef unsigned long long mpack_uintmax_t;
 #elif UINT64_MAX == 0xffffffffffffffff
-# define MPACK_USE_64INT
-typedef int64_t mpack_int64_t;
-typedef uint64_t mpack_uint64_t;
+typedef int64_t mpack_intmax_t;
+typedef uint64_t mpack_uintmax_t;
+#else
+typedef mpack_int32_t mpack_intmax_t;
+typedef mpack_uint32_t mpack_uintmax_t;
 #endif
 
 typedef union {
   double f64;
-#ifdef MPACK_USE_64INT
-  mpack_uint64_t u64;
-  mpack_int64_t s64;
-#endif
-  mpack_uint32_t u32;
-  mpack_int32_t s32;
   struct {
     mpack_uint32_t lo, hi;
   } components;
@@ -92,24 +87,45 @@ struct mpack_unpacker_s {
 
 void mpack_pack_nil(char **b, size_t *bl);
 void mpack_pack_boolean(char **b, size_t *bl, mpack_uint32_t v);
-void mpack_pack_uint32(char **b, size_t *bl, mpack_uint32_t v);
-void mpack_pack_int32(char **b, size_t *bl, mpack_int32_t v);
-void mpack_pack_uint64(char **b, size_t *bl, mpack_value_t v);
-void mpack_pack_int64(char **b, size_t *bl, mpack_value_t v);
+void mpack_pack_pint(char **b, size_t *bl, mpack_value_t v);
+void mpack_pack_nint(char **b, size_t *bl, mpack_value_t v);
 void mpack_pack_float(char **b, size_t *bl, double v);
 void mpack_pack_str(char **b, size_t *bl, mpack_uint32_t l);
 void mpack_pack_bin(char **b, size_t *bl, mpack_uint32_t l);
 void mpack_pack_ext(char **b, size_t *bl, int t, mpack_uint32_t l);
 void mpack_pack_array(char **b, size_t *bl, mpack_uint32_t l);
 void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
-#ifdef MPACK_USE_64INT
-# define mpack_pack_uint(b, bl, v) \
-    mpack_pack_uint64(b, bl, (mpack_value_t){.u64 = v})
-# define mpack_pack_int(b, bl, v) \
-    mpack_pack_int64(b, bl, (mpack_value_t){.s64 = v})
-#else
-# define mpack_pack_uint(b, bl, v) mpack_pack_uint32(b, bl, v)
-# define mpack_pack_int(b, bl, v) mpack_pack_int32(b, bl, v)
-#endif
+
+#define mpack_pack_uint(b, bl, v)                                              \
+  do {                                                                         \
+    mpack_value_t val;                                                         \
+    val.components.lo = v & 0xffffffff;                                        \
+    val.components.hi = v >> 32;                                               \
+    mpack_pack_pint(b, bl, val);                                               \
+  } while (0)
+
+#define mpack_pack_sint(b, bl, v)                                              \
+  do {                                                                         \
+    mpack_value_t val;                                                         \
+    mpack_uintmax_t abs = v < 0 ?                                              \
+      (((mpack_uintmax_t)-(v + 1)) + 1) :                                      \
+      (mpack_uintmax_t)v;                                                      \
+    val.components.lo = (mpack_uint32_t)(abs & 0xffffffff);                    \
+    val.components.hi = (mpack_uint32_t)((abs >> 31) >> 1);                    \
+    if (v < 0) mpack_pack_nint(b, bl, val);                                    \
+    else mpack_pack_pint(b, bl, val);                                          \
+  } while (0)
+
+#define mpack_unpack_boolean(t) (                                              \
+    t->data.value.components.lo || t->data.value.components.hi)
+
+#define mpack_unpack_uint(t) (                                                 \
+  (((mpack_uintmax_t)t->data.value.components.hi << 31) << 1) |                \
+  t->data.value.components.lo)
+
+#define mpack_unpack_sint(t) ((mpack_intmax_t)                                 \
+      (t->type == MPACK_TOKEN_SINT ?                                           \
+      -mpack_unpack_uint(t) :                                                  \
+      mpack_unpack_uint(t)))
 
 #endif  /* MPACK_H */

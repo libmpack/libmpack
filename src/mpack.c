@@ -100,81 +100,62 @@ void mpack_pack_boolean(char **buf, size_t *buflen, mpack_uint32_t val)
   pack1(buf, buflen, val ? 0xc3 : 0xc2);
 }
 
-void mpack_pack_uint32(char **buf, size_t *buflen, mpack_uint32_t val)
+void mpack_pack_pint(char **buf, size_t *buflen, mpack_value_t val)
 {
-  if (val < 0x80) {
-    pack1(buf, buflen, val);
-  } else if (val < 0x100) {
-    pack1(buf, buflen, 0xcc);
-    pack1(buf, buflen, val);
-  } else if (val < 0x10000) {
-    pack1(buf, buflen, 0xcd);
-    pack2(buf, buflen, val);
-  } else {
-    pack1(buf, buflen, 0xce);
-    pack4(buf, buflen, val);
-  }
-}
-
-void mpack_pack_int32(char **buf, size_t *buflen, mpack_int32_t v)
-{
-  mpack_uint32_t val = (mpack_uint32_t)v;
-  if (v > -1) {
-    mpack_pack_uint32(buf, buflen, val);
-  } else if (v > -0x21) {
-    pack1(buf, buflen, (mpack_uint32_t)(0x100 + v));
-  } else if (v > -0x81) {
-    pack1(buf, buflen, 0xd0);
-    pack1(buf, buflen, val);
-  } else if (v > -0x8001) {
-    pack1(buf, buflen, 0xd1);
-    pack2(buf, buflen, val);
-  } else {
-    pack1(buf, buflen, 0xd2);
-    pack4(buf, buflen, val);
-  }
-}
-
-void mpack_pack_uint64(char **buf, size_t *buflen, mpack_value_t val)
-{
-  if (MPACK_BIG_ENDIAN) {
-    /* swap for checking hi/lo */
-    MPACK_SWAP_VALUE(val);
-  }
-
-  if (!val.components.hi) {
-    /* fits into smaller uint */
-    mpack_pack_uint32(buf, buflen, val.components.lo);
-  } else {
+  mpack_uint32_t hi = val.components.hi;
+  mpack_uint32_t lo = val.components.lo;
+  if (hi) {
+    /* uint 64 */
     pack1(buf, buflen, 0xcf);
-    pack4(buf, buflen, val.components.hi);
-    pack4(buf, buflen, val.components.lo);
+    pack4(buf, buflen, hi);
+    pack4(buf, buflen, lo);
+  } else if (lo > 0xffff) {
+    /* uint 32 */
+    pack1(buf, buflen, 0xce);
+    pack4(buf, buflen, lo);
+  } else if (lo > 0xff) {
+    /* uint 16 */
+    pack1(buf, buflen, 0xcd);
+    pack2(buf, buflen, lo);
+  } else if (lo > 0x7f) {
+    /* uint 8 */
+    pack1(buf, buflen, 0xcc);
+    pack1(buf, buflen, lo);
+  } else {
+    pack1(buf, buflen, lo);
   }
 }
 
-void mpack_pack_int64(char **buf, size_t *buflen, mpack_value_t val)
+void mpack_pack_nint(char **buf, size_t *buflen, mpack_value_t val)
 {
-  if (MPACK_BIG_ENDIAN) {
-    /* swap for checking hi/lo */
-    MPACK_SWAP_VALUE(val);
+  /* get the two's complement */
+  mpack_uint32_t hi = ~val.components.hi;
+  mpack_uint32_t lo = ~val.components.lo + 1;
+  if (!lo) {
+    /* carry */
+    hi++;
   }
 
-  if (val.components.hi > 0x7fffffff) {
-    /* negative */
-    if (val.components.lo > 0x7fffffff) {
-      /* fits into smaller int */
-      mpack_pack_int32(buf, buflen, (mpack_int32_t)val.components.lo);
-    } else {
-      pack1(buf, buflen, 0xd3);
-      pack4(buf, buflen, val.components.hi);
-      pack4(buf, buflen, val.components.lo);
-    }
+  if (lo < 0x80000000) {
+    /* int 64 */
+    pack1(buf, buflen, 0xd3);
+    pack4(buf, buflen, hi);
+    pack4(buf, buflen, lo);
+  } else if (lo < 0xffff7fff) {
+    /* int 32 */
+    pack1(buf, buflen, 0xd2);
+    pack4(buf, buflen, lo);
+  } else if (lo < 0xffffff7f) {
+    /* int 16 */
+    pack1(buf, buflen, 0xd1);
+    pack2(buf, buflen, lo);
+  } else if (lo < 0xffffffe0) {
+    /* int 8 */
+    pack1(buf, buflen, 0xd0);
+    pack1(buf, buflen, lo);
   } else {
-    if (MPACK_BIG_ENDIAN) {
-      /* mpack_pack_uint64 already swaps, so we need to swap back */
-      MPACK_SWAP_VALUE(val);
-    }
-    mpack_pack_uint64(buf, buflen, val);
+    /* negative fixint */
+    pack1(buf, buflen, (mpack_uint32_t)(0x100 + lo));
   }
 }
 
@@ -558,20 +539,31 @@ static void process_token(mpack_unpacker_t *unpacker, mpack_token_t *t)
 
 static void process_integer_token(mpack_token_t *t)
 {
-  if (t->type == MPACK_TOKEN_SINT && t->length < 8) {
-    mpack_uint32_t w = t->data.value.components.lo;
-    size_t l = t->length;
-    if ((l == 1 && w > 0x7f)
-        || (l == 2 && w > 0x7fff)
-        || (l == 4 && w > 0x7fffffff)) {
-      mpack_uint32_t fill = 0xffffff00 << ((l - 1) * 8);
-      t->data.value.components.lo = fill + w;
-      t->data.value.components.hi = 0xffffffff;
-    }
-  }
+  mpack_uint32_t negative;
+  if (t->type == MPACK_TOKEN_UINT) return;
 
-  if (MPACK_BIG_ENDIAN) {
-    MPACK_SWAP_VALUE(t->data.value);
+  if (t->length == 8) negative = t->data.value.components.hi >> 31;
+  else if (t->length == 4) negative = t->data.value.components.lo >> 31;
+  else if (t->length == 2) negative = t->data.value.components.lo >> 15;
+  else if (t->length == 1) negative = t->data.value.components.lo >> 7;
+  else assert(0);
+
+  if (!negative) {
+    t->type = MPACK_TOKEN_UINT;
+  } else {
+    /* reverse the two's complement so that lo/hi contain the absolute value*/
+    t->data.value.components.lo = ~t->data.value.components.lo;
+    if (t->length < 8) {
+      mpack_uint32_t mask = ((mpack_uint32_t)1 << ((t->length * 8) - 1)) - 1;
+      t->data.value.components.lo &= mask;
+    } else {
+      t->data.value.components.hi = ~t->data.value.components.hi;
+      if (t->data.value.components.lo == (mpack_uint32_t)(-1)) {
+        /* carry */
+        t->data.value.components.hi++;
+      }
+    }
+    t->data.value.components.lo++;
   }
 }
 

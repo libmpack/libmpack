@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <inttypes.h>
+#include <limits.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -7,10 +9,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 #include "tap.h"
 #include "fixtures.h"
+
+#ifdef FORCE_32BIT_INTS
+#define UFORMAT PRIu32
+#define SFORMAT PRId32
+#undef ULLONG_MAX
+#undef UINT64_MAX
+#else
+#define UFORMAT PRIu64
+#define SFORMAT PRId64
+#endif
 
 #include "mpack.h"
 
@@ -71,11 +82,11 @@ static void process_token(mpack_token_t *t)
     case MPACK_TOKEN_NIL:
       w("null"); pop(1); break;
     case MPACK_TOKEN_BOOLEAN:
-      w(t->data.value.u64 ? "true" : "false"); pop(1); break;
+      w(mpack_unpack_boolean(t) ? "true" : "false"); pop(1); break;
     case MPACK_TOKEN_UINT:
-      w("%" PRIu64, t->data.value.u64); pop(1); break;
+      w("%" UFORMAT, mpack_unpack_uint(t)); pop(1); break;
     case MPACK_TOKEN_SINT:
-      w("%" PRId64, t->data.value.s64); pop(1); break;
+      w("%" SFORMAT, mpack_unpack_sint(t)); pop(1); break;
     case MPACK_TOKEN_FLOAT:
       w("%.*g", 17, t->data.value.f64); pop(1);
       if (round(t->data.value.f64) == t->data.value.f64
@@ -189,7 +200,7 @@ void parse_json(char **buf, size_t *buflen, char **s)
       if (strchr(tmp, '.') || strchr(tmp, 'e')) {
         mpack_pack_float(buf, buflen, d);
       } else {
-        mpack_pack_int(buf, buflen, strtoll(tmp, NULL, 10));
+        mpack_pack_sint(buf, buflen, strtoll(tmp, NULL, 10));
       }
       break;
     }
@@ -310,13 +321,15 @@ static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
   char mpackbuf[256];
   char *buf = mpackbuf;
   size_t buflen = sizeof(mpackbuf);
-  mpack_pack_int32(&buf, &buflen, 0);
-  mpack_pack_int32(&buf, &buflen, 1);
-  mpack_pack_int32(&buf, &buflen, 0x7f);
-  mpack_pack_int32(&buf, &buflen, 0xff);
-  mpack_pack_int32(&buf, &buflen, 0xffff);
-  mpack_pack_int(&buf, &buflen, 0xffffffff);
-  mpack_pack_int(&buf, &buflen, 0x7fffffffffffffff);
+  mpack_pack_sint(&buf, &buflen, 0);
+  mpack_pack_sint(&buf, &buflen, 1);
+  mpack_pack_sint(&buf, &buflen, 0x7f);
+  mpack_pack_sint(&buf, &buflen, 0xff);
+  mpack_pack_sint(&buf, &buflen, 0xffff);
+  mpack_pack_sint(&buf, &buflen, 0xffffffff);
+#ifndef FORCE_32BIT_INTS
+  mpack_pack_sint(&buf, &buflen, 0x7fffffffffffffff);
+#endif
   uint8_t expected[] = {
     0x00,
     0x01,
@@ -324,7 +337,9 @@ static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
     0xcc, 0xff,
     0xcd, 0xff, 0xff,
     0xce, 0xff, 0xff, 0xff, 0xff,
+#ifndef FORCE_32BIT_INTS
     0xcf, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+#endif
   };
   cmp_mem(mpackbuf, expected, sizeof(mpackbuf) - buflen, "packs as positive");
 }
