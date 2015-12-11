@@ -4,23 +4,23 @@
 #include <limits.h>
 
 #if UINT_MAX == 0xffffffff
-typedef int mpack_int32_t;
+typedef int mpack_sint32_t;
 typedef unsigned int mpack_uint32_t;
 #elif ULONG_MAX == 0xffffffff
-typedef long mpack_int32_t;
+typedef long mpack_sint32_t;
 typedef unsigned long mpack_uint32_t;
 #else
 # error "can't find unsigned 32-bit integer type"
 #endif
 
 #if ULLONG_MAX == 0xffffffffffffffff
-typedef long long mpack_intmax_t;
+typedef long long mpack_sintmax_t;
 typedef unsigned long long mpack_uintmax_t;
 #elif UINT64_MAX == 0xffffffffffffffff
-typedef int64_t mpack_intmax_t;
+typedef int64_t mpack_sintmax_t;
 typedef uint64_t mpack_uintmax_t;
 #else
-typedef mpack_int32_t mpack_intmax_t;
+typedef mpack_sint32_t mpack_sintmax_t;
 typedef mpack_uint32_t mpack_uintmax_t;
 #endif
 
@@ -104,10 +104,10 @@ void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
 #  define FUNUSED
 # endif
 static void mpack_pack_uint(char **b, size_t *bl, mpack_uintmax_t v) FUNUSED;
-static void mpack_pack_sint(char **b, size_t *bl, mpack_intmax_t v) FUNUSED;
+static void mpack_pack_sint(char **b, size_t *bl, mpack_sintmax_t v) FUNUSED;
 static int mpack_unpack_boolean(mpack_token_t *t) FUNUSED;
 static mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t) FUNUSED;
-static mpack_intmax_t mpack_unpack_sint(mpack_token_t *t) FUNUSED;
+static mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t) FUNUSED;
 #undef FUNUSED
 #define inline
 #endif
@@ -120,10 +120,10 @@ static inline void mpack_pack_uint(char **b, size_t *bl, mpack_uintmax_t v)
   mpack_pack_pint(b, bl, val);
 }
 
-static inline void mpack_pack_sint(char **b, size_t *bl, mpack_intmax_t v)
+static inline void mpack_pack_sint(char **b, size_t *bl, mpack_sintmax_t v)
 {
   mpack_value_t val;
-  mpack_intmax_t v2 = v;
+  mpack_sintmax_t v2 = v;
   int negative = v2 < 0;
   mpack_uintmax_t abs = negative ?
     (((mpack_uintmax_t)-(v2 + 1)) + 1) :
@@ -145,11 +145,11 @@ static inline mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t)
     | t->data.value.components.lo;
 }
 
-static inline mpack_intmax_t mpack_unpack_sint(mpack_token_t *t)
+static inline mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t)
 {
   return (t->type == MPACK_TOKEN_SINT ?
-      -((mpack_intmax_t)(mpack_unpack_uint(t) - 1)) - 1:
-      (mpack_intmax_t)mpack_unpack_uint(t));
+      -((mpack_sintmax_t)(mpack_unpack_uint(t) - 1)) - 1:
+      (mpack_sintmax_t)mpack_unpack_uint(t));
 }
 
 #endif  /* MPACK_H */

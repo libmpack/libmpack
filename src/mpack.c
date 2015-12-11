@@ -566,7 +566,7 @@ static void process_integer_token(mpack_token_t *t)
 static mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
 {
   mpack_value_t rv;
-  mpack_int32_t exponent, bias = (1 << (expbits - 1)) - 1;
+  mpack_sint32_t exponent, bias = (1 << (expbits - 1)) - 1;
   mpack_uint32_t sign;
   double mant;
 
@@ -607,7 +607,7 @@ end:
 static void process_float_token(mpack_token_t *t)
 {
   mpack_uint32_t sign;
-  mpack_int32_t exponent, bias;
+  mpack_sint32_t exponent, bias;
   unsigned mantbits;
   unsigned expbits;
   double mant;

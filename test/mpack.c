@@ -200,11 +200,7 @@ void parse_json(char **buf, size_t *buflen, char **s)
       if (strchr(tmp, '.') || strchr(tmp, 'e')) {
         mpack_pack_float(buf, buflen, d);
       } else {
-#ifdef FORCE_32BIT_INTS
-        mpack_pack_sint(buf, buflen, (mpack_int32_t)strtoll(tmp, NULL, 10));
-#else
-        mpack_pack_sint(buf, buflen, strtoll(tmp, NULL, 10));
-#endif
+        mpack_pack_sint(buf, buflen, (mpack_sintmax_t)strtoll(tmp, NULL, 10));
       }
       break;
     }
