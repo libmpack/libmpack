@@ -25,12 +25,13 @@ typedef mpack_uint32_t mpack_uintmax_t;
 #endif
 
 typedef union {
-  double f64;
   struct {
     mpack_uint32_t lo, hi;
   } components;
 } mpack_value_t;
 
+
+#include <assert.h>
 #include <stddef.h>
 
 #ifndef MPACK_DEFAULT_STACK_SIZE
@@ -54,7 +55,7 @@ typedef enum {
 
 typedef struct mpack_token_s {
   mpack_token_type_t type;  /* Type of token */
-  size_t length;            /* Byte length for str/bin/ext/chunk/float/int/uint.
+  mpack_uint32_t length;    /* Byte length for str/bin/ext/chunk/float/int/uint.
                                Item count for array/map. */
   union {
     mpack_value_t value;    /* 32-bit parts of primitives (bool,int,float) */
@@ -74,7 +75,7 @@ typedef struct mpack_unpack_state_s {
   mpack_token_t token;
   /* number of bytes remaining when unpacking values or byte arrays.
    * number of items remaining when unpacking arrays or maps. */
-  size_t remaining;
+  mpack_uint32_t remaining;
 } mpack_unpack_state_t;
 
 struct mpack_unpacker_s {
@@ -85,16 +86,7 @@ struct mpack_unpacker_s {
   mpack_unpack_state_t stack[MPACK_DEFAULT_STACK_SIZE];
 };
 
-void mpack_pack_nil(char **b, size_t *bl);
-void mpack_pack_boolean(char **b, size_t *bl, mpack_uint32_t v);
-void mpack_pack_pint(char **b, size_t *bl, mpack_value_t v);
-void mpack_pack_nint(char **b, size_t *bl, mpack_value_t v);
-void mpack_pack_float(char **b, size_t *bl, double v);
-void mpack_pack_str(char **b, size_t *bl, mpack_uint32_t l);
-void mpack_pack_bin(char **b, size_t *bl, mpack_uint32_t l);
-void mpack_pack_ext(char **b, size_t *bl, int t, mpack_uint32_t l);
-void mpack_pack_array(char **b, size_t *bl, mpack_uint32_t l);
-void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
+void mpack_write(mpack_token_t t, char **b, size_t *bl);
 
 
 #if __STDC_VERSION__ < 199901L
@@ -103,35 +95,162 @@ void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
 # else
 #  define FUNUSED
 # endif
-static void mpack_pack_uint(char **b, size_t *bl, mpack_uintmax_t v) FUNUSED;
-static void mpack_pack_sint(char **b, size_t *bl, mpack_sintmax_t v) FUNUSED;
+/* pack */
+static mpack_token_t mpack_pack_nil(void) FUNUSED;
+static mpack_token_t mpack_pack_boolean(unsigned v) FUNUSED;
+static mpack_token_t mpack_pack_uint(mpack_uintmax_t v) FUNUSED;
+static mpack_token_t mpack_pack_sint(mpack_sintmax_t v) FUNUSED;
+static mpack_token_t mpack_pack_float(double v) FUNUSED;
+static mpack_token_t mpack_pack_str(mpack_uint32_t l) FUNUSED;
+static mpack_token_t mpack_pack_bin(mpack_uint32_t l) FUNUSED;
+static mpack_token_t mpack_pack_ext(int type, mpack_uint32_t l) FUNUSED;
+static mpack_token_t mpack_pack_array(mpack_uint32_t l) FUNUSED;
+static mpack_token_t mpack_pack_map(mpack_uint32_t l) FUNUSED;
+/* unpack */
 static int mpack_unpack_boolean(mpack_token_t *t) FUNUSED;
 static mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t) FUNUSED;
 static mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t) FUNUSED;
+static double mpack_unpack_float(mpack_token_t *t) FUNUSED;
 #undef FUNUSED
 #define inline
 #endif
 
-static inline void mpack_pack_uint(char **b, size_t *bl, mpack_uintmax_t v)
+#define POW2(n) \
+  ((double)(1 << (n / 2)) * (double)(1 << (n / 2)) * (double)(1 << (n % 2)))
+
+static inline mpack_token_t mpack_pack_nil(void)
 {
-  mpack_value_t val;
-  val.components.lo = v & 0xffffffff;
-  val.components.hi = (mpack_uint32_t)((v >> 31) >> 1);
-  mpack_pack_pint(b, bl, val);
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_NIL;
+  return rv;
 }
 
-static inline void mpack_pack_sint(char **b, size_t *bl, mpack_sintmax_t v)
+static inline mpack_token_t mpack_pack_boolean(unsigned v)
 {
-  mpack_value_t val;
-  mpack_sintmax_t v2 = v;
-  int negative = v2 < 0;
-  mpack_uintmax_t abs = negative ?
-    (((mpack_uintmax_t)-(v2 + 1)) + 1) :
-    (mpack_uintmax_t)v2;
-  val.components.lo = (mpack_uint32_t)(abs & 0xffffffff);
-  val.components.hi = (mpack_uint32_t)((abs >> 31) >> 1);
-  if (negative) mpack_pack_nint(b, bl, val);
-  else mpack_pack_pint(b, bl, val);
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_BOOLEAN;
+  rv.data.value.components.lo = v ? 1 : 0;
+  rv.data.value.components.hi = 0;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_uint(mpack_uintmax_t v)
+{
+  mpack_token_t rv;
+  rv.data.value.components.lo = v & 0xffffffff;
+  rv.data.value.components.hi = (mpack_uint32_t)((v >> 31) >> 1);
+  rv.type = MPACK_TOKEN_UINT;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
+{
+  if (v < 0) {
+    mpack_token_t rv;
+    mpack_uintmax_t tc = -((mpack_uintmax_t)(v + 1)) + 1;
+    tc = ~tc + 1;
+    rv = mpack_pack_uint(tc);
+    rv.type = MPACK_TOKEN_SINT;
+    return rv;
+  }
+
+  return mpack_pack_uint((mpack_uintmax_t)v);
+}
+
+static mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
+{
+  mpack_value_t rv;
+  mpack_sint32_t exponent, bias = (1 << (expbits - 1)) - 1;
+  mpack_uint32_t sign;
+  double mant;
+
+  if (v == 0) {
+    rv.components.lo = 0;
+    rv.components.hi = 0;
+    goto end;
+  }
+
+  if (v < 0) sign = 1, mant = -v;
+  else sign = 0, mant = v;
+
+  exponent = 0;
+  while (mant >= 2.0) mant /= 2.0, exponent++;
+  while (mant < 1.0 && exponent > -(bias - 1)) mant *= 2.0, exponent--;
+
+  if (mant < 1.0) exponent = -bias; /* subnormal value */
+  else mant = mant - 1.0; /* remove leading 1 */
+  exponent += bias;
+  mant *= POW2(mantbits);
+
+  if (mantbits == 52) {
+    rv.components.hi = (mpack_uint32_t)(mant / POW2(32));
+    rv.components.lo = (mpack_uint32_t)(mant - rv.components.hi * POW2(32));
+    rv.components.hi |= ((mpack_uint32_t)exponent << 20) | (sign << 31);
+  } else if (mantbits == 23) {
+    rv.components.hi = 0;
+    rv.components.lo = (mpack_uint32_t)mant;
+    rv.components.lo |= ((mpack_uint32_t)exponent << 23) | (sign << 31);
+  } else {
+    assert(0);
+  }
+
+end:
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_float(double v)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_FLOAT;
+  if (((double)(float)v) == (double)v) {
+    rv.length = 4;
+    rv.data.value = pack_ieee754(v, 23, 8);
+  } else {
+    rv.length = 8;
+    rv.data.value = pack_ieee754(v, 52, 11);
+  }
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_str(mpack_uint32_t l)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_STR;
+  rv.length = l;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_bin(mpack_uint32_t l)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_BIN;
+  rv.length = l;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_ext(int t, mpack_uint32_t l)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_EXT;
+  rv.length = l;
+  rv.data.ext_type = t;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_array(mpack_uint32_t l)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_ARRAY;
+  rv.length = l;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_map(mpack_uint32_t l)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_MAP;
+  rv.length = l;
+  return rv;
 }
 
 static inline int mpack_unpack_boolean(mpack_token_t *t)
@@ -147,9 +266,66 @@ static inline mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t)
 
 static inline mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t)
 {
-  return (t->type == MPACK_TOKEN_SINT ?
-      -((mpack_sintmax_t)(mpack_unpack_uint(t) - 1)) - 1:
-      (mpack_sintmax_t)mpack_unpack_uint(t));
+  mpack_uint32_t hi = t->data.value.components.hi;
+  mpack_uint32_t lo = t->data.value.components.lo;
+  mpack_uint32_t negative = (t->length == 8 && hi >> 31) ||
+                            (t->length == 4 && lo >> 31) ||
+                            (t->length == 2 && lo >> 15) ||
+                            (t->length == 1 && lo >> 7);
+  assert(t->length <= sizeof(mpack_sintmax_t));
+
+  if (negative) {
+    mpack_uintmax_t rv = lo;
+    if (t->length == 8) {
+      rv |= (((mpack_uintmax_t)hi) << 31) << 1;
+    }
+    /* reverse the two's complement so that lo/hi contain the absolute value.
+     * note that we have to mask ~rv so that it reflects the two's complement
+     * of the appropriate byte length */
+    rv = (~rv & (((mpack_uintmax_t)1 << ((t->length * 8) - 1)) - 1)) + 1;
+    /* negate and return the absolute value, making sure mpack_sintmax_t can
+     * represent the positive cast. */
+    return -((mpack_sintmax_t)(rv - 1)) - 1;
+  }
+
+  return (mpack_sintmax_t)mpack_unpack_uint(t);
+}
+
+static inline double mpack_unpack_float(mpack_token_t *t)
+{
+  mpack_uint32_t sign;
+  mpack_sint32_t exponent, bias;
+  unsigned mantbits;
+  unsigned expbits;
+  double mant;
+
+  if (t->data.value.components.lo == 0 && t->data.value.components.hi == 0) return 0;  /* nothing to do */
+
+  if (t->length == 4) mantbits = 23, expbits = 8;
+  else mantbits = 52, expbits = 11;
+  bias = (1 << (expbits - 1)) - 1;
+
+  /* restore sign/exponent/mantissa */
+  if (mantbits == 52) {
+    sign = t->data.value.components.hi >> 31;
+    exponent = (t->data.value.components.hi >> 20) & ((1 << 11) - 1);
+    mant = (t->data.value.components.hi & ((1 << 20) - 1)) * POW2(32);
+    mant += t->data.value.components.lo;
+  } else {
+    sign = t->data.value.components.lo >> 31;
+    exponent = (t->data.value.components.lo >> 23) & ((1 << 8) - 1);
+    mant = t->data.value.components.lo & ((1 << 23) - 1);
+  }
+
+  mant /= POW2(mantbits);
+  if (exponent) mant += 1.0; /* restore leading 1 */
+  else exponent = 1; /* subnormal */
+  exponent -= bias;
+
+  /* restore original value */
+  while (exponent > 0) mant *= 2.0, exponent--;
+  while (exponent < 0) mant /= 2.0, exponent++;
+  return mant * (sign ? -1 : 1);
 }
 
 #endif  /* MPACK_H */

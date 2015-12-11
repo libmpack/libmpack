@@ -4,7 +4,7 @@
 
 #define UNUSED(p) (void)p;
 #define ADVANCE(buf, buflen) ((*buflen)--, (unsigned char)*((*buf)++))
-#define TLEN(val, range_start) ((size_t)(1 << (val - range_start)))
+#define TLEN(val, range_start) ((mpack_uint32_t)(1 << (val - range_start)))
 #ifndef MIN
 # define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #endif
@@ -25,28 +25,31 @@ static void unpack_byte_array(mpack_unpacker_t *u, const char **b, size_t *bl);
 static void unpack_collection(mpack_unpacker_t *u, const char **b, size_t *bl);
 /* shift helpers */
 static void shift_value(mpack_unpacker_t *u, mpack_token_type_t t,
-    mpack_value_t w, size_t l);
-static void shift_chunk(mpack_unpacker_t *u, const char *p, size_t l);
+    mpack_value_t w, mpack_uint32_t l);
+static void shift_chunk(mpack_unpacker_t *u, const char *p, mpack_uint32_t l);
 static void shift_byte_array(mpack_unpacker_t *u, mpack_token_type_t t,
-    size_t l, int ext_type);
+    mpack_uint32_t l, int ext_type);
 static void shift_collection(mpack_unpacker_t *u, mpack_token_type_t t,
-    size_t l);
+    mpack_uint32_t l);
 /* stack helpers */
 static void push_state(mpack_unpacker_t *u, mpack_token_type_t t,
-    int c, size_t r);
+    int c, mpack_uint32_t r);
 static void pop_state(mpack_unpacker_t *u);
 static mpack_unpack_state_t *top(mpack_unpacker_t *unpacker);
 /* misc */
 static mpack_value_t byte(mpack_unpacker_t *u, unsigned char b);
-static void process_token(mpack_unpacker_t *unpacker, mpack_token_t *t);
-static void process_float_token(mpack_token_t *t);
-static void process_integer_token(mpack_token_t *t);
-/* pack helpers */
-static void pack1(char **b, size_t *bl, mpack_uint32_t v);
-static void pack2(char **b, size_t *bl, mpack_uint32_t v);
-static void pack4(char **b, size_t *bl, mpack_uint32_t v);
-static mpack_value_t pack_double(double v);
-static mpack_uint32_t pack_float(float v);
+/* write helpers */
+static void write1(char **b, size_t *bl, mpack_uint32_t v);
+static void write2(char **b, size_t *bl, mpack_uint32_t v);
+static void write4(char **b, size_t *bl, mpack_uint32_t v);
+static void write_pint(char **b, size_t *bl, mpack_value_t v);
+static void write_nint(char **b, size_t *bl, mpack_value_t v);
+static void write_float(char **b, size_t *bl, mpack_token_t v);
+static void write_str(char **buf, size_t *buflen, mpack_uint32_t len);
+static void write_bin(char **buf, size_t *buflen, mpack_uint32_t len);
+static void write_ext(char **buf, size_t *buflen, int type, mpack_uint32_t len);
+static void write_array(char **buf, size_t *buflen, mpack_uint32_t len);
+static void write_map(char **buf, size_t *buflen, mpack_uint32_t len);
 
 void mpack_unpacker_init(mpack_unpacker_t *unpacker)
 {
@@ -83,170 +86,193 @@ mpack_token_t *mpack_unpack(mpack_unpacker_t *unpacker, const char **buf,
   return unpacker->result;
 }
 
-void mpack_pack_nil(char **buf, size_t *buflen)
+void mpack_write(mpack_token_t tok, char **buf, size_t *buflen)
 {
-  pack1(buf, buflen, 0xc0);
+  switch (tok.type) {
+    case MPACK_TOKEN_NIL:
+      write1(buf, buflen, 0xc0);
+      break;
+    case MPACK_TOKEN_BOOLEAN:
+      write1(buf, buflen, tok.data.value.components.lo ? 0xc3 : 0xc2);
+      break;
+    case MPACK_TOKEN_UINT:
+      write_pint(buf, buflen, tok.data.value);
+      break;
+    case MPACK_TOKEN_SINT:
+      write_nint(buf, buflen, tok.data.value);
+      break;
+    case MPACK_TOKEN_FLOAT:
+      write_float(buf, buflen, tok);
+      break;
+    case MPACK_TOKEN_BIN:
+      write_bin(buf, buflen, tok.length);
+      break;
+    case MPACK_TOKEN_STR:
+      write_str(buf, buflen, tok.length);
+      break;
+    case MPACK_TOKEN_EXT:
+      write_ext(buf, buflen, tok.data.ext_type, tok.length);
+      break;
+    case MPACK_TOKEN_ARRAY:
+      write_array(buf, buflen, tok.length);
+      break;
+    case MPACK_TOKEN_MAP:
+      write_map(buf, buflen, tok.length);
+      break;
+    default:
+      assert(0);
+      break;
+  }
 }
 
-void mpack_pack_boolean(char **buf, size_t *buflen, mpack_uint32_t val)
-{
-  pack1(buf, buflen, val ? 0xc3 : 0xc2);
-}
-
-void mpack_pack_pint(char **buf, size_t *buflen, mpack_value_t val)
+static void write_pint(char **buf, size_t *buflen, mpack_value_t val)
 {
   mpack_uint32_t hi = val.components.hi;
   mpack_uint32_t lo = val.components.lo;
   if (hi) {
     /* uint 64 */
-    pack1(buf, buflen, 0xcf);
-    pack4(buf, buflen, hi);
-    pack4(buf, buflen, lo);
+    write1(buf, buflen, 0xcf);
+    write4(buf, buflen, hi);
+    write4(buf, buflen, lo);
   } else if (lo > 0xffff) {
     /* uint 32 */
-    pack1(buf, buflen, 0xce);
-    pack4(buf, buflen, lo);
+    write1(buf, buflen, 0xce);
+    write4(buf, buflen, lo);
   } else if (lo > 0xff) {
     /* uint 16 */
-    pack1(buf, buflen, 0xcd);
-    pack2(buf, buflen, lo);
+    write1(buf, buflen, 0xcd);
+    write2(buf, buflen, lo);
   } else if (lo > 0x7f) {
     /* uint 8 */
-    pack1(buf, buflen, 0xcc);
-    pack1(buf, buflen, lo);
+    write1(buf, buflen, 0xcc);
+    write1(buf, buflen, lo);
   } else {
-    pack1(buf, buflen, lo);
+    write1(buf, buflen, lo);
   }
 }
 
-void mpack_pack_nint(char **buf, size_t *buflen, mpack_value_t val)
+static void write_nint(char **buf, size_t *buflen, mpack_value_t val)
 {
-  /* get the two's complement */
-  mpack_uint32_t hi = ~val.components.hi;
-  mpack_uint32_t lo = ~val.components.lo + 1;
-  if (!lo) {
-    /* carry */
-    hi++;
-  }
+  mpack_uint32_t hi = val.components.hi;
+  mpack_uint32_t lo = val.components.lo;
 
   if (lo < 0x80000000) {
     /* int 64 */
-    pack1(buf, buflen, 0xd3);
-    pack4(buf, buflen, hi);
-    pack4(buf, buflen, lo);
+    write1(buf, buflen, 0xd3);
+    write4(buf, buflen, hi);
+    write4(buf, buflen, lo);
   } else if (lo < 0xffff7fff) {
     /* int 32 */
-    pack1(buf, buflen, 0xd2);
-    pack4(buf, buflen, lo);
+    write1(buf, buflen, 0xd2);
+    write4(buf, buflen, lo);
   } else if (lo < 0xffffff7f) {
     /* int 16 */
-    pack1(buf, buflen, 0xd1);
-    pack2(buf, buflen, lo);
+    write1(buf, buflen, 0xd1);
+    write2(buf, buflen, lo);
   } else if (lo < 0xffffffe0) {
     /* int 8 */
-    pack1(buf, buflen, 0xd0);
-    pack1(buf, buflen, lo);
+    write1(buf, buflen, 0xd0);
+    write1(buf, buflen, lo);
   } else {
     /* negative fixint */
-    pack1(buf, buflen, (mpack_uint32_t)(0x100 + lo));
+    write1(buf, buflen, (mpack_uint32_t)(0x100 + lo));
   }
 }
 
-void mpack_pack_float(char **buf, size_t *buflen, double val)
+static void write_float(char **buf, size_t *buflen, mpack_token_t tok)
 {
-  if (((double)(float)val) == (double)val) {
-    pack1(buf, buflen, 0xca);
-    pack4(buf, buflen, pack_float((float)val));
-  } else {
-    mpack_value_t v = pack_double(val);
-    pack1(buf, buflen, 0xcb);
-    pack4(buf, buflen, v.components.hi);
-    pack4(buf, buflen, v.components.lo);
+  if (tok.length == 4) {
+    write1(buf, buflen, 0xca);
+    write4(buf, buflen, tok.data.value.components.lo);
+  } else if (tok.length == 8) {
+    write1(buf, buflen, 0xcb);
+    write4(buf, buflen, tok.data.value.components.hi);
+    write4(buf, buflen, tok.data.value.components.lo);
   }
 }
 
-void mpack_pack_str(char **buf, size_t *buflen, mpack_uint32_t len)
+static void write_str(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x20) {
-    pack1(buf, buflen, 0xa0 | len);
+    write1(buf, buflen, 0xa0 | len);
   } else if (len < 0x100) {
-    pack1(buf, buflen, 0xd9);
-    pack1(buf, buflen, len);
+    write1(buf, buflen, 0xd9);
+    write1(buf, buflen, len);
   } else if (len < 0x10000) {
-    pack1(buf, buflen, 0xda);
-    pack2(buf, buflen, len);
+    write1(buf, buflen, 0xda);
+    write2(buf, buflen, len);
   } else {
-    pack1(buf, buflen, 0xdb);
-    pack4(buf, buflen, len);
+    write1(buf, buflen, 0xdb);
+    write4(buf, buflen, len);
   }
 }
 
-void mpack_pack_bin(char **buf, size_t *buflen, mpack_uint32_t len)
+static void write_bin(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x100) {
-    pack1(buf, buflen, 0xc4);
-    pack1(buf, buflen, len);
+    write1(buf, buflen, 0xc4);
+    write1(buf, buflen, len);
   } else if (len < 0x10000) {
-    pack1(buf, buflen, 0xc5);
-    pack2(buf, buflen, len);
+    write1(buf, buflen, 0xc5);
+    write2(buf, buflen, len);
   } else {
-    pack1(buf, buflen, 0xc6);
-    pack4(buf, buflen, len);
+    write1(buf, buflen, 0xc6);
+    write4(buf, buflen, len);
   }
 }
 
-void mpack_pack_ext(char **buf, size_t *buflen, int type, mpack_uint32_t len)
+static void write_ext(char **buf, size_t *buflen, int type, mpack_uint32_t len)
 {
   mpack_uint32_t t;
   assert(type >= 0 && type < 0x80);
   t = (mpack_uint32_t)type;
   switch (len) {
-    case 1: pack1(buf, buflen, 0xd4); pack1(buf, buflen, t); break;
-    case 2: pack1(buf, buflen, 0xd5); pack1(buf, buflen, t); break;
-    case 4: pack1(buf, buflen, 0xd6); pack1(buf, buflen, t); break;
-    case 8: pack1(buf, buflen, 0xd7); pack1(buf, buflen, t); break;
-    case 16: pack1(buf, buflen, 0xd8); pack1(buf, buflen, t); break;
+    case 1: write1(buf, buflen, 0xd4); write1(buf, buflen, t); break;
+    case 2: write1(buf, buflen, 0xd5); write1(buf, buflen, t); break;
+    case 4: write1(buf, buflen, 0xd6); write1(buf, buflen, t); break;
+    case 8: write1(buf, buflen, 0xd7); write1(buf, buflen, t); break;
+    case 16: write1(buf, buflen, 0xd8); write1(buf, buflen, t); break;
     default:
       if (len < 0x100) {
-        pack1(buf, buflen, 0xc7);
-        pack1(buf, buflen, len);
-        pack1(buf, buflen, t);
+        write1(buf, buflen, 0xc7);
+        write1(buf, buflen, len);
+        write1(buf, buflen, t);
       } else if (len < 0x10000) {
-        pack1(buf, buflen, 0xc8);
-        pack2(buf, buflen, len);
-        pack1(buf, buflen, t);
+        write1(buf, buflen, 0xc8);
+        write2(buf, buflen, len);
+        write1(buf, buflen, t);
       } else {
-        pack1(buf, buflen, 0xc9);
-        pack4(buf, buflen, len);
-        pack1(buf, buflen, t);
+        write1(buf, buflen, 0xc9);
+        write4(buf, buflen, len);
+        write1(buf, buflen, t);
       }
       break;
   }
 }
 
-void mpack_pack_array(char **buf, size_t *buflen, mpack_uint32_t len)
+static void write_array(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x10) {
-    pack1(buf, buflen, 0x90 | len);
+    write1(buf, buflen, 0x90 | len);
   } else if (len < 0x10000) {
-    pack1(buf, buflen, 0xdc);
-    pack2(buf, buflen, len);
+    write1(buf, buflen, 0xdc);
+    write2(buf, buflen, len);
   } else {
-    pack1(buf, buflen, 0xdd);
-    pack4(buf, buflen, len);
+    write1(buf, buflen, 0xdd);
+    write4(buf, buflen, len);
   }
 }
 
-void mpack_pack_map(char **buf, size_t *buflen, mpack_uint32_t len)
+static void write_map(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x10) {
-    pack1(buf, buflen, 0x80 | len);
+    write1(buf, buflen, 0x80 | len);
   } else if (len < 0x10000) {
-    pack1(buf, buflen, 0xde);
-    pack2(buf, buflen, len);
+    write1(buf, buflen, 0xde);
+    write2(buf, buflen, len);
   } else {
-    pack1(buf, buflen, 0xdf);
-    pack4(buf, buflen, len);
+    write1(buf, buflen, 0xdf);
+    write4(buf, buflen, len);
   }
 }
 
@@ -398,7 +424,7 @@ static void unpack_byte_array(mpack_unpacker_t *unpacker, const char **buf,
     size_t *buflen)
 {
   mpack_unpack_state_t *t = top(unpacker);
-  size_t len = MIN(t->remaining, *buflen);
+  mpack_uint32_t len = MIN(t->remaining, (mpack_uint32_t)*buflen);
   shift_chunk(unpacker, *buf, len);
   *buf += len;
   *buflen -= len;
@@ -425,18 +451,17 @@ static void unpack_collection(mpack_unpacker_t *unpacker, const char **buf,
 }
 
 static void shift_value(mpack_unpacker_t *unpacker, mpack_token_type_t type,
-    mpack_value_t value, size_t length)
+    mpack_value_t value, mpack_uint32_t length)
 {
   mpack_unpack_state_t *t = top(unpacker);
   t->token.type = type;
   t->token.data.value = value;
   t->token.length = length;
   unpacker->result = &t->token;
-  process_token(unpacker, unpacker->result);
 }
 
 static void shift_chunk(mpack_unpacker_t *unpacker, const char *ptr,
-    size_t length)
+    mpack_uint32_t length)
 {
   mpack_unpack_state_t *t = top(unpacker);
   t->token.type = MPACK_TOKEN_CHUNK;
@@ -446,7 +471,7 @@ static void shift_chunk(mpack_unpacker_t *unpacker, const char *ptr,
 }
 
 static void shift_byte_array(mpack_unpacker_t *unpacker,
-    mpack_token_type_t type, size_t length, int ext_type)
+    mpack_token_type_t type, mpack_uint32_t length, int ext_type)
 {
   mpack_unpack_state_t *t = top(unpacker);
   t->token.type = type;
@@ -457,7 +482,7 @@ static void shift_byte_array(mpack_unpacker_t *unpacker,
 }
 
 static void shift_collection(mpack_unpacker_t *unpacker, mpack_token_type_t type,
-    size_t length)
+    mpack_uint32_t length)
 {
   mpack_unpack_state_t *t = top(unpacker);
   t->token.type = type;
@@ -467,7 +492,7 @@ static void shift_collection(mpack_unpacker_t *unpacker, mpack_token_type_t type
 }
 
 static void push_state(mpack_unpacker_t *unpacker,
-    mpack_token_type_t type, int code, size_t length)
+    mpack_token_type_t type, int code, mpack_uint32_t length)
 {
   mpack_unpack_state_t *state = unpacker->stack + unpacker->stackpos;
   state->code = code;
@@ -498,155 +523,24 @@ static mpack_value_t byte(mpack_unpacker_t *unpacker, unsigned char byte)
   return rv;
 }
 
-static void pack1(char **b, size_t *bl, mpack_uint32_t v)
+static void write1(char **b, size_t *bl, mpack_uint32_t v)
 {
   assert(*bl); (*bl)--;
   *(*b)++ = (char)(v & 0xff);
 }
 
-static void pack2(char **b, size_t *bl, mpack_uint32_t v)
+static void write2(char **b, size_t *bl, mpack_uint32_t v)
 {
   assert(*bl > 1); *bl -= 2;
   *(*b)++ = (char)((v >> 8) & 0xff);
   *(*b)++ = (char)(v & 0xff);
 }
 
-static void pack4(char **b, size_t *bl, mpack_uint32_t v)
+static void write4(char **b, size_t *bl, mpack_uint32_t v)
 {
   assert(*bl > 3); *bl -= 4;
   *(*b)++ = (char)((v >> 24) & 0xff);
   *(*b)++ = (char)((v >> 16) & 0xff);
   *(*b)++ = (char)((v >> 8) & 0xff);
   *(*b)++ = (char)(v & 0xff);
-}
-
-static void process_token(mpack_unpacker_t *unpacker, mpack_token_t *t)
-{
-  UNUSED(unpacker);
-  if (t->type == MPACK_TOKEN_FLOAT) {
-    process_float_token(t);
-  } else if (t->type == MPACK_TOKEN_SINT || t->type == MPACK_TOKEN_UINT) {
-    process_integer_token(t);
-  }
-}
-
-static void process_integer_token(mpack_token_t *t)
-{
-  mpack_uint32_t negative;
-  if (t->type == MPACK_TOKEN_UINT) return;
-
-  if (t->length == 8) negative = t->data.value.components.hi >> 31;
-  else if (t->length == 4) negative = t->data.value.components.lo >> 31;
-  else if (t->length == 2) negative = t->data.value.components.lo >> 15;
-  else if (t->length == 1) negative = t->data.value.components.lo >> 7;
-  else assert(0);
-
-  if (!negative) {
-    t->type = MPACK_TOKEN_UINT;
-  } else {
-    /* reverse the two's complement so that lo/hi contain the absolute value*/
-    t->data.value.components.lo = ~t->data.value.components.lo;
-    if (t->length < 8) {
-      mpack_uint32_t mask = ((mpack_uint32_t)1 << ((t->length * 8) - 1)) - 1;
-      t->data.value.components.lo &= mask;
-    } else {
-      t->data.value.components.hi = ~t->data.value.components.hi;
-      if (t->data.value.components.lo == (mpack_uint32_t)(-1)) {
-        /* carry */
-        t->data.value.components.hi++;
-      }
-    }
-    t->data.value.components.lo++;
-  }
-}
-
-#define POW2(n) \
-  ((double)(1 << (n / 2)) * (double)(1 << (n / 2)) * (double)(1 << (n % 2)))
-
-static mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
-{
-  mpack_value_t rv;
-  mpack_sint32_t exponent, bias = (1 << (expbits - 1)) - 1;
-  mpack_uint32_t sign;
-  double mant;
-
-  if (v == 0) {
-    rv.components.lo = 0;
-    rv.components.hi = 0;
-    goto end;
-  }
-
-  if (v < 0) sign = 1, mant = -v;
-  else sign = 0, mant = v;
-
-  exponent = 0;
-  while (mant >= 2.0) mant /= 2.0, exponent++;
-  while (mant < 1.0 && exponent > -(bias - 1)) mant *= 2.0, exponent--;
-
-  if (mant < 1.0) exponent = -bias; /* subnormal value */
-  else mant = mant - 1.0; /* remove leading 1 */
-  exponent += bias;
-  mant *= POW2(mantbits);
-
-  if (mantbits == 52) {
-    rv.components.hi = (mpack_uint32_t)(mant / POW2(32));
-    rv.components.lo = (mpack_uint32_t)(mant - rv.components.hi * POW2(32));
-    rv.components.hi |= ((mpack_uint32_t)exponent << 20) | (sign << 31);
-  } else if (mantbits == 23) {
-    rv.components.hi = 0;
-    rv.components.lo = (mpack_uint32_t)mant;
-    rv.components.lo |= ((mpack_uint32_t)exponent << 23) | (sign << 31);
-  } else {
-    assert(0);
-  }
-
-end:
-  return rv;
-}
-
-static void process_float_token(mpack_token_t *t)
-{
-  mpack_uint32_t sign;
-  mpack_sint32_t exponent, bias;
-  unsigned mantbits;
-  unsigned expbits;
-  double mant;
-
-  if (t->data.value.f64 == 0) return;  /* nothing to do */
-
-  if (t->length == 4) mantbits = 23, expbits = 8;
-  else mantbits = 52, expbits = 11;
-  bias = (1 << (expbits - 1)) - 1;
-
-  /* restore sign/exponent/mantissa */
-  if (mantbits == 52) {
-    sign = t->data.value.components.hi >> 31;
-    exponent = (t->data.value.components.hi >> 20) & ((1 << 11) - 1);
-    mant = (t->data.value.components.hi & ((1 << 20) - 1)) * POW2(32);
-    mant += t->data.value.components.lo;
-  } else {
-    sign = t->data.value.components.lo >> 31;
-    exponent = (t->data.value.components.lo >> 23) & ((1 << 8) - 1);
-    mant = t->data.value.components.lo & ((1 << 23) - 1);
-  }
-
-  mant /= POW2(mantbits);
-  if (exponent) mant += 1.0; /* restore leading 1 */
-  else exponent = 1; /* subnormal */
-  exponent -= bias;
-
-  /* restore original value */
-  while (exponent > 0) mant *= 2.0, exponent--;
-  while (exponent < 0) mant /= 2.0, exponent++;
-  t->data.value.f64 = mant * (sign ? -1 : 1);
-}
-
-static mpack_value_t pack_double(double v)
-{
-  return pack_ieee754(v, 52, 11);
-}
-
-static mpack_uint32_t pack_float(float v)
-{
-  return pack_ieee754(v, 23, 8).components.lo;
 }

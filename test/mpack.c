@@ -87,14 +87,15 @@ static void process_token(mpack_token_t *t)
       w("%" UFORMAT, mpack_unpack_uint(t)); pop(1); break;
     case MPACK_TOKEN_SINT:
       w("%" SFORMAT, mpack_unpack_sint(t)); pop(1); break;
-    case MPACK_TOKEN_FLOAT:
-      w("%.*g", 17, t->data.value.f64); pop(1);
-      if (round(t->data.value.f64) == t->data.value.f64
-          && (fabs(t->data.value.f64) < 10e3)) {
+    case MPACK_TOKEN_FLOAT: {
+      double d = mpack_unpack_float(t);
+      w("%.*g", 17, d); pop(1);
+      if (round(d) == d && (fabs(d) < 10e3)) {
         /* Need a trailing .0 to be parsed as float in the packer tests */
         w(".0");
       }
       break;
+    } 
     case MPACK_TOKEN_CHUNK:
       w("%.*s", t->length, t->data.chunk_ptr); pop(t->length); break;
     case MPACK_TOKEN_BIN:
@@ -166,16 +167,16 @@ void parse_json(char **buf, size_t *buflen, char **s)
 
   switch (**s) {
     case 'n':
-      mpack_pack_nil(buf, buflen);
+      mpack_write(mpack_pack_nil(), buf, buflen);
       *s += 4;
       break;
     case 'f':
       *s += 5;
-      mpack_pack_boolean(buf, buflen, false);
+      mpack_write(mpack_pack_boolean(false), buf, buflen);
       break;
     case 't':
       *s += 4;
-      mpack_pack_boolean(buf, buflen, true);
+      mpack_write(mpack_pack_boolean(true), buf, buflen);
       break;
     case '0':
     case '1':
@@ -198,9 +199,10 @@ void parse_json(char **buf, size_t *buflen, char **s)
       tmp[l] = 0;
       *s = s2;
       if (strchr(tmp, '.') || strchr(tmp, 'e')) {
-        mpack_pack_float(buf, buflen, d);
+        mpack_write(mpack_pack_float(d), buf, buflen);
       } else {
-        mpack_pack_sint(buf, buflen, (mpack_sintmax_t)strtoll(tmp, NULL, 10));
+        mpack_write(mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10)),
+            buf, buflen);
       }
       break;
     }
@@ -210,25 +212,26 @@ void parse_json(char **buf, size_t *buflen, char **s)
       mpack_uint32_t len = (mpack_uint32_t)(s2 - *s);
       switch (**s) {
         case 's':
-          mpack_pack_str(buf, buflen, len - 2);
+          mpack_write(mpack_pack_str(len - 2), buf, buflen);
           memcpy(*buf, *s + 2, len - 2);
           *buf += len - 2;
           *buflen -= len - 2;
           break;
         case 'b':
-          mpack_pack_bin(buf, buflen, len - 2);
+          mpack_write(mpack_pack_bin(len - 2), buf, buflen);
           memcpy(*buf, *s + 2, len - 2);
           *buf += len - 2;
           *buflen -= len - 2;
           break;
         case 'e':
-          mpack_pack_ext(buf, buflen, (int)strtol(*s + 2, NULL, 16), len - 5);
+          mpack_write(mpack_pack_ext((int)strtol(*s + 2, NULL, 16), len - 5),
+              buf, buflen);
           memcpy(*buf, *s + 5, len - 5);
           *buf += len - 5;
           *buflen -= len - 5;
           break;
         default:
-          mpack_pack_str(buf, buflen, len);
+          mpack_write(mpack_pack_str(len), buf, buflen);
           memcpy(*buf, *s, len);
           *buf += len;
           *buflen -= len;
@@ -239,7 +242,7 @@ void parse_json(char **buf, size_t *buflen, char **s)
     }
     case '[': {
       (*s)++;
-      mpack_pack_array(buf, buflen, item_count(*s));
+      mpack_write(mpack_pack_array(item_count(*s)), buf, buflen);
       while (**s != ']') {
         parse_json(buf, buflen, s);
       }
@@ -248,7 +251,7 @@ void parse_json(char **buf, size_t *buflen, char **s)
     }
     case '{': {
       (*s)++;
-      mpack_pack_map(buf, buflen, item_count(*s));
+      mpack_write(mpack_pack_map(item_count(*s)), buf, buflen);
       while (**s != '}') {
         parse_json(buf, buflen, s);
         (*s)++;
@@ -292,6 +295,8 @@ static void fixture_test(int fixture_idx)
     fmsgpacklen = f->msgpacklen;
   }
 
+  char repr[32];
+  snprintf(repr, sizeof(repr), "%s", fjson);
   /* unpacking test */
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     size_t cs = chunksizes[i];
@@ -305,15 +310,15 @@ static void fixture_test(int fixture_idx)
       unpack_buf((const char *)fmsgpack + j, MIN(cs, fmsgpacklen - j));
     }
 
-    is(data.buf, fjson, "fixture %d unpack with chunksize of %zu",
-        fixture_idx, cs);
+    is(data.buf, fjson, "unpack '%s' with chunksize of %zu",
+        repr, cs);
   }
   /* packing test */
   char *b = data.buf;
   size_t bl = sizeof(data.buf);
   char *j = fjson;
   parse_json(&b, &bl, &j);
-  cmp_mem(data.buf, fmsgpack, fmsgpacklen, "fixture %d pack", fixture_idx);
+  cmp_mem(data.buf, fmsgpack, fmsgpacklen, "pack '%s'", repr);
 }
 
 static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
@@ -321,14 +326,14 @@ static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
   char mpackbuf[256];
   char *buf = mpackbuf;
   size_t buflen = sizeof(mpackbuf);
-  mpack_pack_sint(&buf, &buflen, 0);
-  mpack_pack_sint(&buf, &buflen, 1);
-  mpack_pack_sint(&buf, &buflen, 0x7f);
-  mpack_pack_sint(&buf, &buflen, 0xff);
-  mpack_pack_sint(&buf, &buflen, 0xffff);
+  mpack_write(mpack_pack_sint(0), &buf, &buflen);
+  mpack_write(mpack_pack_sint(1), &buf, &buflen);
+  mpack_write(mpack_pack_sint(0x7f), &buf, &buflen);
+  mpack_write(mpack_pack_sint(0xff), &buf, &buflen);
+  mpack_write(mpack_pack_sint(0xffff), &buf, &buflen);
 #ifndef FORCE_32BIT_INTS
-  mpack_pack_sint(&buf, &buflen, 0xffffffff);
-  mpack_pack_sint(&buf, &buflen, 0x7fffffffffffffff);
+  mpack_write(mpack_pack_sint(0xffffffff), &buf, &buflen);
+  mpack_write(mpack_pack_sint(0x7fffffffffffffff), &buf, &buflen);
 #endif
   uint8_t expected[] = {
     0x00,
