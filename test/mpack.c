@@ -200,7 +200,11 @@ void parse_json(char **buf, size_t *buflen, char **s)
       if (strchr(tmp, '.') || strchr(tmp, 'e')) {
         mpack_pack_float(buf, buflen, d);
       } else {
+#ifdef FORCE_32BIT_INTS
+        mpack_pack_sint(buf, buflen, (mpack_int32_t)strtoll(tmp, NULL, 10));
+#else
         mpack_pack_sint(buf, buflen, strtoll(tmp, NULL, 10));
+#endif
       }
       break;
     }
@@ -326,8 +330,8 @@ static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
   mpack_pack_sint(&buf, &buflen, 0x7f);
   mpack_pack_sint(&buf, &buflen, 0xff);
   mpack_pack_sint(&buf, &buflen, 0xffff);
-  mpack_pack_sint(&buf, &buflen, 0xffffffff);
 #ifndef FORCE_32BIT_INTS
+  mpack_pack_sint(&buf, &buflen, 0xffffffff);
   mpack_pack_sint(&buf, &buflen, 0x7fffffffffffffff);
 #endif
   uint8_t expected[] = {
@@ -336,8 +340,8 @@ static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
     0x7f,
     0xcc, 0xff,
     0xcd, 0xff, 0xff,
-    0xce, 0xff, 0xff, 0xff, 0xff,
 #ifndef FORCE_32BIT_INTS
+    0xce, 0xff, 0xff, 0xff, 0xff,
     0xcf, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 #endif
   };
