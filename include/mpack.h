@@ -24,10 +24,8 @@ typedef mpack_sint32_t mpack_sintmax_t;
 typedef mpack_uint32_t mpack_uintmax_t;
 #endif
 
-typedef union {
-  struct {
-    mpack_uint32_t lo, hi;
-  } components;
+typedef struct mpack_value_s {
+  mpack_uint32_t lo, hi;
 } mpack_value_t;
 
 
@@ -129,16 +127,16 @@ static inline mpack_token_t mpack_pack_boolean(unsigned v)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_BOOLEAN;
-  rv.data.value.components.lo = v ? 1 : 0;
-  rv.data.value.components.hi = 0;
+  rv.data.value.lo = v ? 1 : 0;
+  rv.data.value.hi = 0;
   return rv;
 }
 
 static inline mpack_token_t mpack_pack_uint(mpack_uintmax_t v)
 {
   mpack_token_t rv;
-  rv.data.value.components.lo = v & 0xffffffff;
-  rv.data.value.components.hi = (mpack_uint32_t)((v >> 31) >> 1);
+  rv.data.value.lo = v & 0xffffffff;
+  rv.data.value.hi = (mpack_uint32_t)((v >> 31) >> 1);
   rv.type = MPACK_TOKEN_UINT;
   return rv;
 }
@@ -165,8 +163,8 @@ static mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
   double mant;
 
   if (v == 0) {
-    rv.components.lo = 0;
-    rv.components.hi = 0;
+    rv.lo = 0;
+    rv.hi = 0;
     goto end;
   }
 
@@ -183,13 +181,13 @@ static mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
   mant *= POW2(mantbits);
 
   if (mantbits == 52) {
-    rv.components.hi = (mpack_uint32_t)(mant / POW2(32));
-    rv.components.lo = (mpack_uint32_t)(mant - rv.components.hi * POW2(32));
-    rv.components.hi |= ((mpack_uint32_t)exponent << 20) | (sign << 31);
+    rv.hi = (mpack_uint32_t)(mant / POW2(32));
+    rv.lo = (mpack_uint32_t)(mant - rv.hi * POW2(32));
+    rv.hi |= ((mpack_uint32_t)exponent << 20) | (sign << 31);
   } else if (mantbits == 23) {
-    rv.components.hi = 0;
-    rv.components.lo = (mpack_uint32_t)mant;
-    rv.components.lo |= ((mpack_uint32_t)exponent << 23) | (sign << 31);
+    rv.hi = 0;
+    rv.lo = (mpack_uint32_t)mant;
+    rv.lo |= ((mpack_uint32_t)exponent << 23) | (sign << 31);
   } else {
     assert(0);
   }
@@ -255,19 +253,18 @@ static inline mpack_token_t mpack_pack_map(mpack_uint32_t l)
 
 static inline int mpack_unpack_boolean(mpack_token_t *t)
 {
-  return t->data.value.components.lo || t->data.value.components.hi;
+  return t->data.value.lo || t->data.value.hi;
 }
 
 static inline mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t)
 {
-  return (((mpack_uintmax_t)t->data.value.components.hi << 31) << 1)
-    | t->data.value.components.lo;
+  return (((mpack_uintmax_t)t->data.value.hi << 31) << 1) | t->data.value.lo;
 }
 
 static inline mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t)
 {
-  mpack_uint32_t hi = t->data.value.components.hi;
-  mpack_uint32_t lo = t->data.value.components.lo;
+  mpack_uint32_t hi = t->data.value.hi;
+  mpack_uint32_t lo = t->data.value.lo;
   mpack_uint32_t negative = (t->length == 8 && hi >> 31) ||
                             (t->length == 4 && lo >> 31) ||
                             (t->length == 2 && lo >> 15) ||
@@ -299,7 +296,9 @@ static inline double mpack_unpack_float(mpack_token_t *t)
   unsigned expbits;
   double mant;
 
-  if (t->data.value.components.lo == 0 && t->data.value.components.hi == 0) return 0;  /* nothing to do */
+  if (t->data.value.lo == 0 && t->data.value.hi == 0)
+    /* nothing to do */
+    return 0;
 
   if (t->length == 4) mantbits = 23, expbits = 8;
   else mantbits = 52, expbits = 11;
@@ -307,14 +306,14 @@ static inline double mpack_unpack_float(mpack_token_t *t)
 
   /* restore sign/exponent/mantissa */
   if (mantbits == 52) {
-    sign = t->data.value.components.hi >> 31;
-    exponent = (t->data.value.components.hi >> 20) & ((1 << 11) - 1);
-    mant = (t->data.value.components.hi & ((1 << 20) - 1)) * POW2(32);
-    mant += t->data.value.components.lo;
+    sign = t->data.value.hi >> 31;
+    exponent = (t->data.value.hi >> 20) & ((1 << 11) - 1);
+    mant = (t->data.value.hi & ((1 << 20) - 1)) * POW2(32);
+    mant += t->data.value.lo;
   } else {
-    sign = t->data.value.components.lo >> 31;
-    exponent = (t->data.value.components.lo >> 23) & ((1 << 8) - 1);
-    mant = t->data.value.components.lo & ((1 << 23) - 1);
+    sign = t->data.value.lo >> 31;
+    exponent = (t->data.value.lo >> 23) & ((1 << 8) - 1);
+    mant = t->data.value.lo & ((1 << 23) - 1);
   }
 
   mant /= POW2(mantbits);

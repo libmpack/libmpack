@@ -93,7 +93,7 @@ void mpack_write(mpack_token_t tok, char **buf, size_t *buflen)
       write1(buf, buflen, 0xc0);
       break;
     case MPACK_TOKEN_BOOLEAN:
-      write1(buf, buflen, tok.data.value.components.lo ? 0xc3 : 0xc2);
+      write1(buf, buflen, tok.data.value.lo ? 0xc3 : 0xc2);
       break;
     case MPACK_TOKEN_UINT:
       write_pint(buf, buflen, tok.data.value);
@@ -127,8 +127,8 @@ void mpack_write(mpack_token_t tok, char **buf, size_t *buflen)
 
 static void write_pint(char **buf, size_t *buflen, mpack_value_t val)
 {
-  mpack_uint32_t hi = val.components.hi;
-  mpack_uint32_t lo = val.components.lo;
+  mpack_uint32_t hi = val.hi;
+  mpack_uint32_t lo = val.lo;
   if (hi) {
     /* uint 64 */
     write1(buf, buflen, 0xcf);
@@ -153,8 +153,8 @@ static void write_pint(char **buf, size_t *buflen, mpack_value_t val)
 
 static void write_nint(char **buf, size_t *buflen, mpack_value_t val)
 {
-  mpack_uint32_t hi = val.components.hi;
-  mpack_uint32_t lo = val.components.lo;
+  mpack_uint32_t hi = val.hi;
+  mpack_uint32_t lo = val.lo;
 
   if (lo < 0x80000000) {
     /* int 64 */
@@ -183,11 +183,11 @@ static void write_float(char **buf, size_t *buflen, mpack_token_t tok)
 {
   if (tok.length == 4) {
     write1(buf, buflen, 0xca);
-    write4(buf, buflen, tok.data.value.components.lo);
+    write4(buf, buflen, tok.data.value.lo);
   } else if (tok.length == 8) {
     write1(buf, buflen, 0xcb);
-    write4(buf, buflen, tok.data.value.components.hi);
-    write4(buf, buflen, tok.data.value.components.lo);
+    write4(buf, buflen, tok.data.value.hi);
+    write4(buf, buflen, tok.data.value.lo);
   }
 }
 
@@ -373,12 +373,12 @@ static void unpack_value(mpack_unpacker_t *unpacker, const char **buf,
     mpack_uint32_t byte = ADVANCE(buf, buflen), byte_idx, byte_shift;
     byte_idx = (mpack_uint32_t)--t->remaining;
     byte_shift = (byte_idx % 4) * 8;
-    t->token.data.value.components.lo |= byte << byte_shift;
+    t->token.data.value.lo |= byte << byte_shift;
     if (t->remaining == 4) {
       /* unpacked the first half of a 8-byte value, shift what was parsed to the
        * "hi" field and reset "lo" for the trailing 4 bytes. */
-      t->token.data.value.components.hi = t->token.data.value.components.lo;
-      t->token.data.value.components.lo = 0;
+      t->token.data.value.hi = t->token.data.value.lo;
+      t->token.data.value.lo = 0;
     }
   } while (*buflen && t->remaining);
 
@@ -392,8 +392,8 @@ static void unpack_value(mpack_unpacker_t *unpacker, const char **buf,
     /* internal value unpacking to get the length of a container or byte array.
      * note that msgpack only allows 32-bit sizes for arrays/maps/strings, so
      * the entire value will be contained in the "lo" field. */
-    t->remaining = t->token.data.value.components.lo;
-    assert(!t->token.data.value.components.hi);
+    t->remaining = t->token.data.value.lo;
+    assert(!t->token.data.value.hi);
     if (t->token.type > MPACK_TOKEN_EXT) {
       if (t->token.type == MPACK_TOKEN_MAP) {
         t->remaining *= 2;
@@ -518,8 +518,8 @@ static mpack_value_t byte(mpack_unpacker_t *unpacker, unsigned char byte)
 {
   mpack_value_t rv;
   UNUSED(unpacker);
-  rv.components.lo = byte;
-  rv.components.hi = 0;
+  rv.lo = byte;
+  rv.hi = 0;
   return rv;
 }
 
