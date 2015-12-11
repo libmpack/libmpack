@@ -39,19 +39,7 @@ matrix:
       compiler: gcc
       env:
         - CONFIG=release
-        - CFLAGS=-DNO_NATIVE_IEEE754 
-    - os: linux
-      compiler: gcc
-      env:
-        - CONFIG=release
-        - CFLAGS=-DNO_NATIVE_IEEE754 
-        - RUNNER=.deps/usr/bin/qemu-armeb
-      addons:
-        apt:
-          packages:
-            - qemu-user-static
-      install:
-        - . .ci/arm_test_setup.sh
+        - CFLAGS=-DFORCE_32BIT_INTS 
     - os: osx
       env: CONFIG=release
       compiler: clang
