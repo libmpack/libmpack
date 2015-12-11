@@ -107,12 +107,14 @@ void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
 #define mpack_pack_sint(b, bl, v)                                              \
   do {                                                                         \
     mpack_value_t val;                                                         \
-    mpack_uintmax_t abs = v < 0 ?                                              \
-      (((mpack_uintmax_t)-(v + 1)) + 1) :                                      \
-      (mpack_uintmax_t)v;                                                      \
+    mpack_intmax_t v2 = v;                                                     \
+    int negative = v2 < 0;                                                     \
+    mpack_uintmax_t abs = negative ?                                           \
+      (((mpack_uintmax_t)-(v2 + 1)) + 1) :                                     \
+      (mpack_uintmax_t)v2;                                                     \
     val.components.lo = (mpack_uint32_t)(abs & 0xffffffff);                    \
     val.components.hi = (mpack_uint32_t)((abs >> 31) >> 1);                    \
-    if (v < 0) mpack_pack_nint(b, bl, val);                                    \
+    if (negative) mpack_pack_nint(b, bl, val);                                 \
     else mpack_pack_pint(b, bl, val);                                          \
   } while (0)
 
