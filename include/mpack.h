@@ -96,38 +96,60 @@ void mpack_pack_ext(char **b, size_t *bl, int t, mpack_uint32_t l);
 void mpack_pack_array(char **b, size_t *bl, mpack_uint32_t l);
 void mpack_pack_map(char **b, size_t *bl, mpack_uint32_t l);
 
-#define mpack_pack_uint(b, bl, v)                                              \
-  do {                                                                         \
-    mpack_value_t val;                                                         \
-    val.components.lo = v & 0xffffffff;                                        \
-    val.components.hi = v >> 32;                                               \
-    mpack_pack_pint(b, bl, val);                                               \
-  } while (0)
 
-#define mpack_pack_sint(b, bl, v)                                              \
-  do {                                                                         \
-    mpack_value_t val;                                                         \
-    mpack_intmax_t v2 = v;                                                     \
-    int negative = v2 < 0;                                                     \
-    mpack_uintmax_t abs = negative ?                                           \
-      (((mpack_uintmax_t)-(v2 + 1)) + 1) :                                     \
-      (mpack_uintmax_t)v2;                                                     \
-    val.components.lo = (mpack_uint32_t)(abs & 0xffffffff);                    \
-    val.components.hi = (mpack_uint32_t)((abs >> 31) >> 1);                    \
-    if (negative) mpack_pack_nint(b, bl, val);                                 \
-    else mpack_pack_pint(b, bl, val);                                          \
-  } while (0)
+#if __STDC_VERSION__ < 199901L
+# ifdef __GNUC__
+#  define FUNUSED __attribute__((unused))
+# else
+#  define FUNUSED
+# endif
+static void mpack_pack_uint(char **b, size_t *bl, mpack_uintmax_t v) FUNUSED;
+static void mpack_pack_sint(char **b, size_t *bl, mpack_intmax_t v) FUNUSED;
+static int mpack_unpack_boolean(mpack_token_t *t) FUNUSED;
+static mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t) FUNUSED;
+static mpack_intmax_t mpack_unpack_sint(mpack_token_t *t) FUNUSED;
+#undef FUNUSED
+#define inline
+#endif
 
-#define mpack_unpack_boolean(t) (                                              \
-    t->data.value.components.lo || t->data.value.components.hi)
+static inline void mpack_pack_uint(char **b, size_t *bl, mpack_uintmax_t v)
+{
+  mpack_value_t val;
+  val.components.lo = v & 0xffffffff;
+  val.components.hi = (mpack_uint32_t)((v >> 31) >> 1);
+  mpack_pack_pint(b, bl, val);
+}
 
-#define mpack_unpack_uint(t) (                                                 \
-  (((mpack_uintmax_t)t->data.value.components.hi << 31) << 1) |                \
-  t->data.value.components.lo)
+static inline void mpack_pack_sint(char **b, size_t *bl, mpack_intmax_t v)
+{
+  mpack_value_t val;
+  mpack_intmax_t v2 = v;
+  int negative = v2 < 0;
+  mpack_uintmax_t abs = negative ?
+    (((mpack_uintmax_t)-(v2 + 1)) + 1) :
+    (mpack_uintmax_t)v2;
+  val.components.lo = (mpack_uint32_t)(abs & 0xffffffff);
+  val.components.hi = (mpack_uint32_t)((abs >> 31) >> 1);
+  if (negative) mpack_pack_nint(b, bl, val);
+  else mpack_pack_pint(b, bl, val);
+}
 
-#define mpack_unpack_sint(t) ((mpack_intmax_t)                                 \
-      (t->type == MPACK_TOKEN_SINT ?                                           \
-      -mpack_unpack_uint(t) :                                                  \
-      mpack_unpack_uint(t)))
+static inline int mpack_unpack_boolean(mpack_token_t *t)
+{
+  return t->data.value.components.lo || t->data.value.components.hi;
+}
+
+static inline mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t)
+{
+  return (((mpack_uintmax_t)t->data.value.components.hi << 31) << 1)
+    | t->data.value.components.lo;
+}
+
+static inline mpack_intmax_t mpack_unpack_sint(mpack_token_t *t)
+{
+  return (t->type == MPACK_TOKEN_SINT ?
+      -((mpack_intmax_t)(mpack_unpack_uint(t) - 1)) - 1:
+      (mpack_intmax_t)mpack_unpack_uint(t));
+}
 
 #endif  /* MPACK_H */
