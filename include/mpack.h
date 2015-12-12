@@ -37,12 +37,12 @@ typedef struct mpack_value_s {
 #endif  /* MPACK_STACK_MAX_SIZE */
 
 typedef enum {
+  MPACK_TOKEN_NONE = 0,
   MPACK_TOKEN_NIL,
   MPACK_TOKEN_BOOLEAN,
   MPACK_TOKEN_UINT,
   MPACK_TOKEN_SINT,
   MPACK_TOKEN_FLOAT,
-  MPACK_TOKEN_CHUNK,
   MPACK_TOKEN_BIN,
   MPACK_TOKEN_STR,
   MPACK_TOKEN_EXT,
@@ -62,28 +62,7 @@ typedef struct mpack_token_s {
   } data;
 } mpack_token_t;
 
-typedef struct mpack_unpacker_s mpack_unpacker_t;
-
-void mpack_unpacker_init(mpack_unpacker_t *unpacker);
-mpack_token_t *mpack_unpack(mpack_unpacker_t *unpacker, const char **buf,
-    size_t *buflen);
-
-typedef struct mpack_unpack_state_s {
-  int code;
-  mpack_token_t token;
-  /* number of bytes remaining when unpacking values or byte arrays.
-   * number of items remaining when unpacking arrays or maps. */
-  mpack_uint32_t remaining;
-} mpack_unpack_state_t;
-
-struct mpack_unpacker_s {
-  void *data;
-  mpack_token_t *result;
-  size_t stackpos;
-  int error_code;
-  mpack_unpack_state_t stack[MPACK_DEFAULT_STACK_SIZE];
-};
-
+mpack_token_t mpack_read(const char **buf, size_t *buflen);
 void mpack_write(mpack_token_t t, char **b, size_t *bl);
 
 
