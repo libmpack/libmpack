@@ -1,6 +1,16 @@
 #ifndef MPACK_H
 #define MPACK_H
 
+#ifdef __GNUC__
+# define FPURE __attribute__((pure))
+# define FUNUSED __attribute__((unused))
+# define FNONULL(n) __attribute__((nonnull(n)))
+#else
+# define FPURE
+# define FUNUSED
+# define FNONULL(n)
+#endif
+
 #include <limits.h>
 
 #if UINT_MAX == 0xffffffff
@@ -78,33 +88,38 @@ size_t mpack_read(const char **b, size_t *bl, mpack_token_t *tb, size_t tbl,
 size_t mpack_write(char **b, size_t *bl, const mpack_token_t *tb, size_t tbl,
     mpack_writer_t *w);
 
+#ifndef MPACK_C
+/* Don't define pack/unpack functions when included form mpack.c */
+
+#ifndef bool
+# define bool int
+#endif
 
 #if __STDC_VERSION__ < 199901L
-# ifdef __GNUC__
-#  define FUNUSED __attribute__((unused))
-# else
-#  define FUNUSED
-# endif
+# define inline
 /* pack */
-static mpack_token_t mpack_pack_nil(void) FUNUSED;
-static mpack_token_t mpack_pack_boolean(unsigned v) FUNUSED;
-static mpack_token_t mpack_pack_uint(mpack_uintmax_t v) FUNUSED;
-static mpack_token_t mpack_pack_sint(mpack_sintmax_t v) FUNUSED;
-static mpack_token_t mpack_pack_float(double v) FUNUSED;
-static mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l) FUNUSED;
-static mpack_token_t mpack_pack_str(mpack_uint32_t l) FUNUSED;
-static mpack_token_t mpack_pack_bin(mpack_uint32_t l) FUNUSED;
-static mpack_token_t mpack_pack_ext(int type, mpack_uint32_t l) FUNUSED;
-static mpack_token_t mpack_pack_array(mpack_uint32_t l) FUNUSED;
-static mpack_token_t mpack_pack_map(mpack_uint32_t l) FUNUSED;
+static mpack_token_t mpack_pack_nil(void) FUNUSED FPURE;
+static mpack_token_t mpack_pack_boolean(unsigned v) FUNUSED FPURE;
+static mpack_token_t mpack_pack_uint(mpack_uintmax_t v) FUNUSED FPURE;
+static mpack_token_t mpack_pack_sint(mpack_sintmax_t v) FUNUSED FPURE;
+static mpack_token_t mpack_pack_float(double v) FUNUSED FPURE;
+static mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
+  FUNUSED FPURE FNONULL(1);
+static mpack_token_t mpack_pack_str(mpack_uint32_t l) FUNUSED FPURE;
+static mpack_token_t mpack_pack_bin(mpack_uint32_t l) FUNUSED FPURE;
+static mpack_token_t mpack_pack_ext(int type, mpack_uint32_t l) FUNUSED FPURE;
+static mpack_token_t mpack_pack_array(mpack_uint32_t l) FUNUSED FPURE;
+static mpack_token_t mpack_pack_map(mpack_uint32_t l) FUNUSED FPURE;
 /* unpack */
-static int mpack_unpack_boolean(mpack_token_t *t) FUNUSED;
-static mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t) FUNUSED;
-static mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t) FUNUSED;
-static double mpack_unpack_float(mpack_token_t *t) FUNUSED;
-#undef FUNUSED
-#define inline
-#endif
+static bool mpack_unpack_boolean(mpack_token_t *t)
+  FUNUSED FPURE FNONULL(1);
+static mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t)
+  FUNUSED FPURE FNONULL(1);
+static mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t)
+  FUNUSED FPURE FNONULL(1);
+static double mpack_unpack_float(mpack_token_t *t)
+  FUNUSED FPURE FNONULL(1);
+#endif  /* __STDC_VERSION__ < 199901L */
 
 #define POW2(n) \
   ((double)(1 << (n / 2)) * (double)(1 << (n / 2)) * (double)(1 << (n % 2)))
@@ -253,7 +268,7 @@ static inline mpack_token_t mpack_pack_map(mpack_uint32_t l)
   return rv;
 }
 
-static inline int mpack_unpack_boolean(mpack_token_t *t)
+static inline bool mpack_unpack_boolean(mpack_token_t *t)
 {
   return t->data.value.lo || t->data.value.hi;
 }
@@ -328,5 +343,11 @@ static inline double mpack_unpack_float(mpack_token_t *t)
   while (exponent < 0) mant /= 2.0, exponent++;
   return mant * (sign ? -1 : 1);
 }
+
+#endif  /* MPACK_C */
+
+#undef FPURE
+#undef FUNUSED
+#undef FNONULL
 
 #endif  /* MPACK_H */

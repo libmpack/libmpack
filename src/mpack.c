@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <string.h>
 
+#define MPACK_C
 #include "mpack.h"
 
 #define UNUSED(p) (void)p;
