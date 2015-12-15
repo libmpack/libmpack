@@ -67,4 +67,5 @@ workspace 'mpack'
     buildoptions {'-std=c99'}
     links {'m', 'mpack', 'tap'}
     filter {'configurations:coverage'}
+      buildoptions {'--coverage'}
       linkoptions {'--coverage'}

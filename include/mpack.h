@@ -32,22 +32,20 @@ typedef struct mpack_value_s {
 #include <assert.h>
 #include <stddef.h>
 
-#ifndef MPACK_DEFAULT_STACK_SIZE
-# define MPACK_DEFAULT_STACK_SIZE 32
-#endif  /* MPACK_STACK_MAX_SIZE */
+#define MPACK_MAX_TOKEN_SIZE 12
 
 typedef enum {
-  MPACK_TOKEN_NONE = 0,
-  MPACK_TOKEN_NIL,
-  MPACK_TOKEN_BOOLEAN,
-  MPACK_TOKEN_UINT,
-  MPACK_TOKEN_SINT,
-  MPACK_TOKEN_FLOAT,
-  MPACK_TOKEN_BIN,
-  MPACK_TOKEN_STR,
-  MPACK_TOKEN_EXT,
-  MPACK_TOKEN_ARRAY,
-  MPACK_TOKEN_MAP
+  MPACK_TOKEN_NIL       = 1,
+  MPACK_TOKEN_BOOLEAN   = 2,
+  MPACK_TOKEN_UINT      = 3,
+  MPACK_TOKEN_SINT      = 4,
+  MPACK_TOKEN_FLOAT     = 5,
+  MPACK_TOKEN_CHUNK     = 6,
+  MPACK_TOKEN_ARRAY     = 7,
+  MPACK_TOKEN_MAP       = 8,
+  MPACK_TOKEN_BIN       = 9,
+  MPACK_TOKEN_STR       = 10,
+  MPACK_TOKEN_EXT       = 11
 } mpack_token_type_t;
 
 
@@ -62,8 +60,23 @@ typedef struct mpack_token_s {
   } data;
 } mpack_token_t;
 
-mpack_token_t mpack_read(const char **buf, size_t *buflen);
-void mpack_write(mpack_token_t t, char **b, size_t *bl);
+typedef struct mpack_reader_s {
+  char pending[MPACK_MAX_TOKEN_SIZE];
+  size_t pending_cnt;
+  mpack_uint32_t passthrough;
+} mpack_reader_t;
+
+typedef struct mpack_writer_s {
+  const mpack_token_t *pending;
+  size_t pending_written;
+} mpack_writer_t;
+
+void mpack_reader_init(mpack_reader_t *r);
+void mpack_writer_init(mpack_writer_t *w);
+size_t mpack_read(const char **b, size_t *bl, mpack_token_t *tb, size_t tbl,
+    mpack_reader_t *r);
+size_t mpack_write(char **b, size_t *bl, const mpack_token_t *tb, size_t tbl,
+    mpack_writer_t *w);
 
 
 #if __STDC_VERSION__ < 199901L
@@ -78,6 +91,7 @@ static mpack_token_t mpack_pack_boolean(unsigned v) FUNUSED;
 static mpack_token_t mpack_pack_uint(mpack_uintmax_t v) FUNUSED;
 static mpack_token_t mpack_pack_sint(mpack_sintmax_t v) FUNUSED;
 static mpack_token_t mpack_pack_float(double v) FUNUSED;
+static mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l) FUNUSED;
 static mpack_token_t mpack_pack_str(mpack_uint32_t l) FUNUSED;
 static mpack_token_t mpack_pack_bin(mpack_uint32_t l) FUNUSED;
 static mpack_token_t mpack_pack_ext(int type, mpack_uint32_t l) FUNUSED;
@@ -186,6 +200,15 @@ static inline mpack_token_t mpack_pack_float(double v)
     rv.length = 8;
     rv.data.value = pack_ieee754(v, 52, 11);
   }
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
+{
+  mpack_token_t rv;
+  rv.type = MPACK_TOKEN_CHUNK;
+  rv.data.chunk_ptr = p;
+  rv.length = l;
   return rv;
 }
 
