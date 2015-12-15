@@ -10,7 +10,6 @@
 # define FUNUSED
 # define FNONULL(n)
 #endif
-
 #include <limits.h>
 
 #if UINT_MAX == 0xffffffff
@@ -22,6 +21,15 @@ typedef unsigned long mpack_uint32_t;
 #else
 # error "can't find unsigned 32-bit integer type"
 #endif
+
+#define MPACK_BIG_ENDIAN (*(mpack_uint32_t *)"\xff\0\0\0" == 0xff000000)
+
+#define MPACK_SWAP_VALUE(val)                                  \
+  do {                                                         \
+    mpack_uint32_t lo = val.lo;                                \
+    val.lo = val.hi;                                           \
+    val.hi = lo;                                               \
+  } while (0)
 
 #if ULLONG_MAX == 0xffffffffffffffff
 typedef long long mpack_sintmax_t;
@@ -102,7 +110,8 @@ static mpack_token_t mpack_pack_nil(void) FUNUSED FPURE;
 static mpack_token_t mpack_pack_boolean(unsigned v) FUNUSED FPURE;
 static mpack_token_t mpack_pack_uint(mpack_uintmax_t v) FUNUSED FPURE;
 static mpack_token_t mpack_pack_sint(mpack_sintmax_t v) FUNUSED FPURE;
-static mpack_token_t mpack_pack_float(double v) FUNUSED FPURE;
+static mpack_token_t mpack_pack_float_compat(double v) FUNUSED FPURE;
+static mpack_token_t mpack_pack_float_fast(double v) FUNUSED FPURE;
 static mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
   FUNUSED FPURE FNONULL(1);
 static mpack_token_t mpack_pack_str(mpack_uint32_t l) FUNUSED FPURE;
@@ -204,21 +213,58 @@ end:
   return rv;
 }
 
-static inline mpack_token_t mpack_pack_float(double v)
+static inline int fits_single(double v)
+{
+  const double float_max_abs = 3.4028234663852886e+38;
+  const double float_min_abs = 1.4012984643248171e-45;
+  double vabs = v < 0 ? -v : v;
+  return vabs == 0 || (vabs >= float_min_abs && vabs <= float_max_abs);
+}
+
+static inline mpack_token_t mpack_pack_float_compat(double v)
 {
   /* ieee754 single-precision limits to determine if "v" can be fully
    * represented in 4 bytes */
   mpack_token_t rv;
-  const double float_max_abs = 3.4028234663852886e+38;
-  const double float_min_abs = 1.4012984643248171e-45;
-  double vabs = v < 0 ? -v : v;
 
-  if (vabs == 0 || (vabs >= float_min_abs && vabs <= float_max_abs)) {
+  if (fits_single(v)) {
     rv.length = 4;
     rv.data.value = pack_ieee754(v, 23, 8);
   } else {
     rv.length = 8;
     rv.data.value = pack_ieee754(v, 52, 11);
+  }
+
+  rv.type = MPACK_TOKEN_FLOAT;
+  return rv;
+}
+
+static inline mpack_token_t mpack_pack_float_fast(double v)
+{
+  /* ieee754 single-precision limits to determine if "v" can be fully
+   * represented in 4 bytes */
+  mpack_token_t rv;
+
+  if (fits_single(v)) {
+    union {
+      float f;
+      mpack_uint32_t m;
+    } conv;
+    conv.f = (float)v;
+    rv.length = 4;
+    rv.data.value.lo = conv.m;
+    rv.data.value.hi = 0;
+  } else {
+    union {
+      double d;
+      mpack_value_t m;
+    } conv;
+    conv.d = v;
+    rv.length = 8;
+    rv.data.value = conv.m;
+    if (MPACK_BIG_ENDIAN) {
+      MPACK_SWAP_VALUE(rv.data.value);
+    }
   }
 
   rv.type = MPACK_TOKEN_FLOAT;
@@ -275,17 +321,19 @@ static inline mpack_token_t mpack_pack_map(mpack_uint32_t l)
   return rv;
 }
 
-static inline bool mpack_unpack_boolean(mpack_token_t *t)
+static inline bool mpack_unpack_boolean(const mpack_token_t *t)
 {
   return t->data.value.lo || t->data.value.hi;
 }
 
-static inline mpack_uintmax_t mpack_unpack_uint(mpack_token_t *t)
+static inline mpack_uintmax_t mpack_unpack_uint(const mpack_token_t *t)
 {
   return (((mpack_uintmax_t)t->data.value.hi << 31) << 1) | t->data.value.lo;
 }
 
-static inline mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t)
+/* unpack signed integer without relying on two's complement as internal
+ * representation */
+static inline mpack_sintmax_t mpack_unpack_sint(const mpack_token_t *t)
 {
   mpack_uint32_t hi = t->data.value.hi;
   mpack_uint32_t lo = t->data.value.lo;
@@ -312,7 +360,7 @@ static inline mpack_sintmax_t mpack_unpack_sint(mpack_token_t *t)
   return (mpack_sintmax_t)mpack_unpack_uint(t);
 }
 
-static inline double mpack_unpack_float(mpack_token_t *t)
+static inline double mpack_unpack_float_compat(const mpack_token_t *t)
 {
   mpack_uint32_t sign;
   mpack_sint32_t exponent, bias;
@@ -351,10 +399,46 @@ static inline double mpack_unpack_float(mpack_token_t *t)
   return mant * (sign ? -1 : 1);
 }
 
+static inline double mpack_unpack_float_fast(const mpack_token_t *t)
+{
+  if (t->length == 4) {
+    union {
+      float f;
+      mpack_uint32_t m;
+    } conv;
+    conv.m = t->data.value.lo;
+    return conv.f;
+  } else {
+    union {
+      double d;
+      mpack_value_t m;
+    } conv;
+    conv.m = t->data.value;
+    
+    if (MPACK_BIG_ENDIAN) {
+      MPACK_SWAP_VALUE(conv.m);
+    }
+
+    return conv.d;
+  }
+}
+
 #endif  /* MPACK_C */
 
 #undef FPURE
 #undef FUNUSED
 #undef FNONULL
+
+/* The mpack_{pack,unpack}_float_fast functions should work in 99% of the
+ * platforms. When compiling for a platform where floats don't use ieee754 as
+ * the internal format, pass
+ * -Dmpack_{pack,unpack}_float=mpack_{pack,unpack}_float_compat to the
+ *  compiler.*/
+#ifndef mpack_pack_float
+# define mpack_pack_float mpack_pack_float_fast
+#endif
+#ifndef mpack_unpack_float
+# define mpack_unpack_float mpack_unpack_float_fast
+#endif
 
 #endif  /* MPACK_H */

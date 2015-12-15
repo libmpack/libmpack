@@ -91,7 +91,11 @@ static void process_token(mpack_token_t *t)
     case MPACK_TOKEN_SINT:
       w("%" SFORMAT, mpack_unpack_sint(t)); pop(1); break;
     case MPACK_TOKEN_FLOAT: {
-      double d = mpack_unpack_float(t);
+      double d = mpack_unpack_float_fast(t);
+      if (d != mpack_unpack_float_compat(t)) {
+        /* test both unpack_float implementations */
+        fail("unpack_float_compat differs from unpack_float_fast");
+      }
       w("%.*g", 17, d); pop(1);
       if (round(d) == d && (fabs(d) < 10e3)) {
         /* Need a trailing .0 to be parsed as float in the packer tests */
@@ -202,7 +206,16 @@ void parse_json(char **s)
       tmp[l] = 0;
       *s = s2;
       if (strchr(tmp, '.') || strchr(tmp, 'e')) {
-        tokbuf[tokbufpos++] = mpack_pack_float(d);
+        tokbuf[tokbufpos++] = mpack_pack_float_fast(d);
+        {
+          /* test both pack_float implementations */
+          mpack_token_t tok = tokbuf[tokbufpos - 1];
+          mpack_token_t tok2 = mpack_pack_float_compat(d);
+          if (tok2.data.value.lo != tok.data.value.lo ||
+              tok2.data.value.hi != tok.data.value.hi) {
+            fail("pack_float_compat differs from pack_float_fast");
+          }
+        }
       } else {
         tokbuf[tokbufpos++] = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
       }
