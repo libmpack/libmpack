@@ -28,6 +28,8 @@ static int read_value(mpack_token_type_t t, mpack_uint32_t l,
 static int read_blob(mpack_token_type_t t, mpack_uint32_t l,
     const char **b, size_t *bl, mpack_token_t *tok);
 static int mpack_write_token(const mpack_token_t *tok, char **b, size_t *bl);
+static int mpack_write_pending(char **b, size_t *bl, const mpack_token_t *tok,
+    mpack_writer_t *w);
 static int write1(char **b, size_t *bl, mpack_uint32_t v);
 static int write2(char **b, size_t *bl, mpack_uint32_t v);
 static int write4(char **b, size_t *bl, mpack_uint32_t v);
@@ -122,41 +124,12 @@ size_t mpack_read(const char **buf, size_t *buflen, mpack_token_t *tokbuf,
 size_t mpack_write(char **buf, size_t *buflen, const mpack_token_t *tokbuf,
     size_t tokbuflen, mpack_writer_t *writer)
 {
-  /* TODO(tarruda): Function needs cleanup */
   const mpack_token_t *tok = tokbuf, *tokend = tokbuf + tokbuflen;
   assert(*buflen);
 
-  if (writer->pending) {
-    /* if a token was partially written in a previous call, try to finish it
-     * now. */
-    char tmp[MPACK_MAX_TOKEN_SIZE], *ptr = tmp;
-    size_t pending_len, count, tmplen, ptrlen = sizeof(tmp);
-    assert(writer->pending == tokbuf);
-
-    if (tok->type == MPACK_TOKEN_CHUNK) {
-      assert(writer->pending_written < tok->length);
-      pending_len = tok->length - writer->pending_written;
-      ptr = (char *)tok->data.chunk_ptr;
-    } else {
-      if (mpack_write_token(tokbuf, &ptr, &ptrlen)) {
-        assert(0);
-        return (size_t)-1;
-      }
-      tmplen = sizeof(tmp) - ptrlen;
-      assert(writer->pending_written < tmplen);
-      pending_len = tmplen - writer->pending_written;
-      ptr = tmp;
-    }
-    count = MIN(pending_len, *buflen);
-    memcpy(*buf, ptr + writer->pending_written, count);
-    if (pending_len <= *buflen) {
-      tok++;
-      writer->pending = NULL;
-    } else {
-      writer->pending_written += count;
-    }
-    *buflen -= count;
-    *buf += count;
+  if (writer->pending && mpack_write_pending(buf, buflen, tok, writer)) {
+    tok++;
+    writer->pending = NULL;
   }
 
   for (; *buflen && tok < tokend; tok++) {
@@ -167,27 +140,9 @@ size_t mpack_write(char **buf, size_t *buflen, const mpack_token_t *tokbuf,
     if ((status = mpack_write_token(tok, &ptr, &ptrlen))) {
       /* not enough space in *buf, write whatever we can and mark
        * the token as pending to be finished in a future call */
-      char tmp[MPACK_MAX_TOKEN_SIZE], *ptr = tmp;
-      size_t count, ptrlen = sizeof(tmp);
-      assert(status = MPACK_EOF);
-
-      if (tok->type == MPACK_TOKEN_CHUNK) {
-        assert(tok->length > *buflen);
-        ptr = (char *)tok->data.chunk_ptr;
-      } else {
-        if (mpack_write_token(tokbuf, &ptr, &ptrlen)) {
-          assert(0);
-          return (size_t)-1;
-        }
-        assert((sizeof(tmp) - ptrlen) > *buflen);
-        ptr = tmp;
-      }
-      count = *buflen;
-      memcpy(*buf, ptr, count);
-      *buflen -= count;
-      *buf += count;
-      writer->pending_written = count;
+      writer->pending_written = 0;
       writer->pending = tok;
+      (void)mpack_write_pending(buf, buflen, tok, writer);
       break;
     }
 
@@ -377,6 +332,37 @@ static int mpack_write_token(const mpack_token_t *tok, char **buf,
       assert(0);
       return MPACK_ERROR;
   }
+}
+
+static int mpack_write_pending(char **buf, size_t *buflen,
+    const mpack_token_t *tok, mpack_writer_t *writer)
+{
+  int rv;
+  char tmp[MPACK_MAX_TOKEN_SIZE], *ptr = tmp;
+  size_t pending_len, count, tmplen, ptrlen = sizeof(tmp);
+  assert(writer->pending == tok);
+
+  if (tok->type == MPACK_TOKEN_CHUNK) {
+    assert(writer->pending_written < tok->length);
+    pending_len = tok->length - writer->pending_written;
+    ptr = (char *)tok->data.chunk_ptr;
+  } else {
+    if (mpack_write_token(tok, &ptr, &ptrlen)) {
+      assert(0);
+      return -1;
+    }
+    tmplen = sizeof(tmp) - ptrlen;
+    assert(writer->pending_written < tmplen);
+    pending_len = tmplen - writer->pending_written;
+    ptr = tmp;
+  }
+  count = MIN(pending_len, *buflen);
+  memcpy(*buf, ptr + writer->pending_written, count);
+  rv = pending_len <= *buflen;
+  writer->pending_written += count;
+  *buflen -= count;
+  *buf += count;
+  return rv;
 }
 
 static int write_pint(char **buf, size_t *buflen, mpack_value_t val)
