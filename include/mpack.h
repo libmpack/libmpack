@@ -206,15 +206,22 @@ end:
 
 static inline mpack_token_t mpack_pack_float(double v)
 {
+  /* ieee754 single-precision limits to determine if "v" can be fully
+   * represented in 4 bytes */
   mpack_token_t rv;
-  rv.type = MPACK_TOKEN_FLOAT;
-  if (((double)(float)v) == (double)v) {
+  const double float_max_abs = 3.4028234663852886e+38;
+  const double float_min_abs = 1.4012984643248171e-45;
+  double vabs = v < 0 ? -v : v;
+
+  if (vabs == 0 || (vabs >= float_min_abs && vabs <= float_max_abs)) {
     rv.length = 4;
     rv.data.value = pack_ieee754(v, 23, 8);
   } else {
     rv.length = 8;
     rv.data.value = pack_ieee754(v, 52, 11);
   }
+
+  rv.type = MPACK_TOKEN_FLOAT;
   return rv;
 }
 
