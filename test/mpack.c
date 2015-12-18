@@ -336,7 +336,7 @@ static void fixture_test(int fixture_idx)
   }
 }
 
-static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
+static void signed_positive_packs_with_unsigned_format(void)
 {
   char mpackbuf[256];
   char *buf = mpackbuf;
@@ -364,15 +364,71 @@ static void positive_integer_passed_to_mpack_int_packs_as_positive(void)
     0xcf, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 #endif
   };
-  cmp_mem(mpackbuf, expected, sizeof(mpackbuf) - buflen, "packs as positive");
+  cmp_mem(mpackbuf, expected, sizeof(mpackbuf) - buflen,
+      "signed positive packs with unsigned format");
+}
+
+static void positive_signed_format_unpacks_as_unsigned(void)
+{
+  mpack_reader_t reader;
+  mpack_token_t toks[4];
+  const uint8_t input[] = {
+    0xd0, 0x7f,
+    0xd1, 0x7f, 0xff,
+    0xd2, 0x7f, 0xff, 0xff, 0xff,
+#ifndef FORCE_32BIT_INTS
+    0xd3, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+#endif
+  };
+  const char *inp = (const char *)input;
+  size_t inplen = sizeof(input);
+  mpack_reader_init(&reader);
+  mpack_read(&inp, &inplen, toks, ARRAY_SIZE(toks), &reader);
+  mpack_uintmax_t expected[] = {
+    0x7f,
+    0x7fff,
+    0x7fffffff,
+#ifndef FORCE_32BIT_INTS
+    0x7fffffffffffffff
+#endif
+  };
+  mpack_token_type_t expected_types[] = {
+    MPACK_TOKEN_UINT,
+    MPACK_TOKEN_UINT,
+    MPACK_TOKEN_UINT,
+#ifndef FORCE_32BIT_INTS
+    MPACK_TOKEN_UINT,
+#endif
+  };
+  mpack_uintmax_t actual[] = {
+    mpack_unpack_uint(toks + 0),
+    mpack_unpack_uint(toks + 1),
+    mpack_unpack_uint(toks + 2),
+#ifndef FORCE_32BIT_INTS
+    mpack_unpack_uint(toks + 3)
+#endif
+  };
+  mpack_token_type_t actual_types[] = {
+    toks[0].type,
+    toks[1].type,
+    toks[2].type,
+#ifndef FORCE_32BIT_INTS
+    toks[3].type
+#endif
+  };
+  cmp_mem(expected, actual, sizeof(expected),
+      "positive signed format unpacks as unsigned");
+  cmp_mem(expected_types, actual_types, sizeof(expected_types),
+      "positive signed format unpacks as unsigned(tokens)");
 }
 
 int main(void)
 {
-  plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + 1);
+  plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + 3);
   for (int i = 0; i < fixture_count; i++) {
     fixture_test(i);
   }
-  positive_integer_passed_to_mpack_int_packs_as_positive();
+  signed_positive_packs_with_unsigned_format();
+  positive_signed_format_unpacks_as_unsigned();
   done_testing();
 }

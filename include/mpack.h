@@ -337,27 +337,18 @@ static inline mpack_sintmax_t mpack_unpack_sint(const mpack_token_t *t)
 {
   mpack_uint32_t hi = t->data.value.hi;
   mpack_uint32_t lo = t->data.value.lo;
-  mpack_uint32_t negative = (t->length == 8 && hi >> 31) ||
-                            (t->length == 4 && lo >> 31) ||
-                            (t->length == 2 && lo >> 15) ||
-                            (t->length == 1 && lo >> 7);
   assert(t->length <= sizeof(mpack_sintmax_t));
-
-  if (negative) {
-    mpack_uintmax_t rv = lo;
-    if (t->length == 8) {
-      rv |= (((mpack_uintmax_t)hi) << 31) << 1;
-    }
-    /* reverse the two's complement so that lo/hi contain the absolute value.
-     * note that we have to mask ~rv so that it reflects the two's complement
-     * of the appropriate byte length */
-    rv = (~rv & (((mpack_uintmax_t)1 << ((t->length * 8) - 1)) - 1)) + 1;
-    /* negate and return the absolute value, making sure mpack_sintmax_t can
-     * represent the positive cast. */
-    return -((mpack_sintmax_t)(rv - 1)) - 1;
+  mpack_uintmax_t rv = lo;
+  if (t->length == 8) {
+    rv |= (((mpack_uintmax_t)hi) << 31) << 1;
   }
-
-  return (mpack_sintmax_t)mpack_unpack_uint(t);
+  /* reverse the two's complement so that lo/hi contain the absolute value.
+   * note that we have to mask ~rv so that it reflects the two's complement
+   * of the appropriate byte length */
+  rv = (~rv & (((mpack_uintmax_t)1 << ((t->length * 8) - 1)) - 1)) + 1;
+  /* negate and return the absolute value, making sure mpack_sintmax_t can
+   * represent the positive cast. */
+  return -((mpack_sintmax_t)(rv - 1)) - 1;
 }
 
 static inline double mpack_unpack_float_compat(const mpack_token_t *t)

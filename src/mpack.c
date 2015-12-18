@@ -269,6 +269,18 @@ static int read_value(mpack_token_type_t type, mpack_uint32_t remaining,
     }
   }
 
+  if (type == MPACK_TOKEN_SINT) {
+    mpack_uint32_t hi = tok->data.value.hi;
+    mpack_uint32_t lo = tok->data.value.lo;
+    mpack_uint32_t msb = (tok->length == 8 && hi >> 31) ||
+                         (tok->length == 4 && lo >> 31) ||
+                         (tok->length == 2 && lo >> 15) ||
+                         (tok->length == 1 && lo >> 7);
+    if (!msb) {
+      tok->type = MPACK_TOKEN_UINT;
+    }
+  }
+
   return MPACK_OK;
 }
 
