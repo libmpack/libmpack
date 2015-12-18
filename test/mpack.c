@@ -91,11 +91,10 @@ static void process_token(mpack_token_t *t)
     case MPACK_TOKEN_SINT:
       w("%" SFORMAT, mpack_unpack_sint(t)); pop(1); break;
     case MPACK_TOKEN_FLOAT: {
-      double d = mpack_unpack_float_fast(t);
-      if (d != mpack_unpack_float_compat(t)) {
-        /* test both unpack_float implementations */
-        fail("unpack_float_compat differs from unpack_float_fast");
-      }
+      /* test both unpack_float implementations */
+      double d = mpack_unpack_float_fast(t), d2 = mpack_unpack_float_compat(t);
+      (void)(d2);
+      assert(d == d2);
       w("%.*g", 17, d); pop(1);
       if (round(d) == d && (fabs(d) < 10e3)) {
         /* Need a trailing .0 to be parsed as float in the packer tests */
@@ -121,7 +120,6 @@ static void process_token(mpack_token_t *t)
       w("["); push(t->length, ']'); break;
     case MPACK_TOKEN_MAP:
       w("{"); push(t->length, '}'); break;
-    default: abort();
   }
 
 
@@ -211,10 +209,10 @@ void parse_json(char **s)
           /* test both pack_float implementations */
           mpack_token_t tok = tokbuf[tokbufpos - 1];
           mpack_token_t tok2 = mpack_pack_float_compat(d);
-          if (tok2.data.value.lo != tok.data.value.lo ||
-              tok2.data.value.hi != tok.data.value.hi) {
-            fail("pack_float_compat differs from pack_float_fast");
-          }
+          (void)(tok);
+          (void)(tok2);
+          assert(tok2.data.value.lo == tok.data.value.lo &&
+              tok2.data.value.hi == tok.data.value.hi);
         }
       } else {
         tokbuf[tokbufpos++] = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
@@ -266,10 +264,6 @@ void parse_json(char **s)
       (*s)++;
       break;
     }
-    default: abort();
-  }
-  while (**s == ' ') {
-    (*s)++;
   }
 } 
 
@@ -452,27 +446,13 @@ static void does_not_write_invalid_tokens(void)
   ok(!mpack_write(&ptr, &ptrlen, &tok2, 1, &writer),
       "does not write invalid tokens 2");
 }
-
-static void does_not_accept_buflen_error_code(void)
-{
-  mpack_reader_t reader;
-  mpack_reader_init(&reader);
-  const char buf[] = {0x05}, *ptr = buf;
-  size_t ptrlen = MPACK_EREAD;
-  mpack_token_t tok;
-  ok(mpack_read(&ptr, &ptrlen, &tok, 1, &reader) == MPACK_ESIZE,
-      "does not read with buflen > MPACK_EREAD 1");
-  ptrlen = MPACK_ESIZE;
-  ok(mpack_read(&ptr, &ptrlen, &tok, 1, &reader) == MPACK_ESIZE,
-      "does not read with buflen > MPACK_EREAD 2");
-}
 #endif
 
 int main(void)
 {
   int extra_test_count = 4;
 #ifdef NDEBUG
-  extra_test_count += 4;
+  extra_test_count += 2;
 #endif
   plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + extra_test_count);
   for (int i = 0; i < fixture_count; i++) {
@@ -483,7 +463,6 @@ int main(void)
   unpacking_c1_returns_eread();
 #ifdef NDEBUG
   does_not_write_invalid_tokens();
-  does_not_accept_buflen_error_code();
 #endif
   done_testing();
 }

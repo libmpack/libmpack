@@ -9,9 +9,11 @@ workspace 'mpack'
   buildoptions {'-Wconversion', '-Wstrict-prototypes', '-pedantic'}
 
   filter {'configurations:debug or *san or coverage or profile'}
-    defines 'DEBUG'
     optimize 'Off'
     flags {'Symbols'}
+
+  filter {'configurations:debug or *san or profile'}
+    defines 'DEBUG'
 
   filter {'configurations:*san'}
     buildoptions {'-fno-omit-frame-pointer', '-fno-optimize-sibling-calls'}
@@ -29,9 +31,11 @@ workspace 'mpack'
     linkoptions {'-fsanitize=memory'}
 
   filter {'configurations:release'}
-    defines 'NDEBUG'
     optimize 'Speed'
     flags {'FatalWarnings'}
+
+  filter {'configurations:release or coverage'}
+    defines 'NDEBUG'
 
   filter {'configurations:profile'}
     buildoptions {'-pg'}

@@ -60,9 +60,6 @@ size_t mpack_read(const char **buf, size_t *buflen, mpack_token_t *tokbuf,
   /* TODO(tarruda): Function needs cleanup */
   mpack_token_t *tok = tokbuf, *tokend = tokbuf + tokbuflen;
   assert(*buflen && !MPACK_ERRORED(*buflen));
-  if (MPACK_ERRORED(*buflen)) {
-    return MPACK_ESIZE;
-  }
 
   for (; *buflen && tok < tokend; tok++) {
     int status;
