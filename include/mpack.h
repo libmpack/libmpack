@@ -50,6 +50,10 @@ typedef struct mpack_value_s {
 #include <assert.h>
 #include <stddef.h>
 
+#define MPACK_ESIZE ((size_t)(-1))
+#define MPACK_EREAD ((size_t)(-2))
+#define MPACK_ERRORED(s) (s >= MPACK_EREAD)
+
 #define MPACK_MAX_TOKEN_SIZE 12
 
 typedef enum {
@@ -65,7 +69,6 @@ typedef enum {
   MPACK_TOKEN_STR       = 10,
   MPACK_TOKEN_EXT       = 11
 } mpack_token_type_t;
-
 
 typedef struct mpack_token_s {
   mpack_token_type_t type;  /* Type of token */
@@ -205,8 +208,6 @@ static mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
     rv.hi = 0;
     rv.lo = (mpack_uint32_t)mant;
     rv.lo |= ((mpack_uint32_t)exponent << 23) | (sign << 31);
-  } else {
-    assert(0);
   }
 
 end:

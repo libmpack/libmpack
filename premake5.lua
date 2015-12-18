@@ -29,6 +29,7 @@ workspace 'mpack'
     linkoptions {'-fsanitize=memory'}
 
   filter {'configurations:release'}
+    defines 'NDEBUG'
     optimize 'Speed'
     flags {'FatalWarnings'}
 

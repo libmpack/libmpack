@@ -422,13 +422,68 @@ static void positive_signed_format_unpacks_as_unsigned(void)
       "positive signed format unpacks as unsigned(tokens)");
 }
 
+static void unpacking_c1_returns_eread(void)
+{
+  mpack_reader_t reader;
+  const uint8_t input[] = {0xc1};
+  const char *inp = (const char *)input;
+  size_t inplen = sizeof(input);
+  mpack_token_t tok;
+  mpack_reader_init(&reader);
+  size_t res = mpack_read(&inp, &inplen, &tok, 1, &reader);
+  ok(MPACK_ERRORED(res) && res == MPACK_EREAD, "0xc1 returns MPACK_EREAD");
+}
+
+#ifdef NDEBUG
+/* This test triggers failed assertions if NDEBUG is not defined */
+static void does_not_write_invalid_tokens(void)
+{
+  mpack_writer_t writer;
+  mpack_writer_init(&writer);
+  mpack_token_t tok, tok2;
+  tok.type = 9999;
+  char buf[64], *ptr = buf;
+  size_t ptrlen = sizeof(buf);
+  tok2 = mpack_pack_float_compat(5.5);
+  tok2.length = 5;
+  ok(!mpack_write(&ptr, &ptrlen, &tok, 1, &writer),
+      "does not write invalid tokens 1");
+  mpack_writer_init(&writer);
+  ok(!mpack_write(&ptr, &ptrlen, &tok2, 1, &writer),
+      "does not write invalid tokens 2");
+}
+
+static void does_not_accept_buflen_error_code(void)
+{
+  mpack_reader_t reader;
+  mpack_reader_init(&reader);
+  const char buf[] = {0x05}, *ptr = buf;
+  size_t ptrlen = MPACK_EREAD;
+  mpack_token_t tok;
+  ok(mpack_read(&ptr, &ptrlen, &tok, 1, &reader) == MPACK_ESIZE,
+      "does not read with buflen > MPACK_EREAD 1");
+  ptrlen = MPACK_ESIZE;
+  ok(mpack_read(&ptr, &ptrlen, &tok, 1, &reader) == MPACK_ESIZE,
+      "does not read with buflen > MPACK_EREAD 2");
+}
+#endif
+
 int main(void)
 {
-  plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + 3);
+  int extra_test_count = 4;
+#ifdef NDEBUG
+  extra_test_count += 4;
+#endif
+  plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + extra_test_count);
   for (int i = 0; i < fixture_count; i++) {
     fixture_test(i);
   }
   signed_positive_packs_with_unsigned_format();
   positive_signed_format_unpacks_as_unsigned();
+  unpacking_c1_returns_eread();
+#ifdef NDEBUG
+  does_not_write_invalid_tokens();
+  does_not_accept_buflen_error_code();
+#endif
   done_testing();
 }

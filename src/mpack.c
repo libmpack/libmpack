@@ -59,9 +59,13 @@ size_t mpack_read(const char **buf, size_t *buflen, mpack_token_t *tokbuf,
 {
   /* TODO(tarruda): Function needs cleanup */
   mpack_token_t *tok = tokbuf, *tokend = tokbuf + tokbuflen;
-  assert(*buflen);
+  assert(*buflen && !MPACK_ERRORED(*buflen));
+  if (MPACK_ERRORED(*buflen)) {
+    return MPACK_ESIZE;
+  }
 
   for (; *buflen && tok < tokend; tok++) {
+    int status;
     size_t ppos, ptrlen;
     const char *ptr, *ptr_save;
 
@@ -94,7 +98,10 @@ size_t mpack_read(const char **buf, size_t *buflen, mpack_token_t *tokbuf,
 
     ptr_save = ptr;
 
-    if (mpack_read_token(&ptr, &ptrlen, tok)) {
+    if ((status = mpack_read_token(&ptr, &ptrlen, tok))) {
+      if (status == MPACK_ERROR) {
+        return MPACK_EREAD;
+      }
       /* need more data */
       if (!ppos) {
         /* copy the remainder of *buf to reader->pending so it can be parsed
@@ -138,6 +145,7 @@ size_t mpack_write(char **buf, size_t *buflen, const mpack_token_t *tokbuf,
     size_t ptrlen = *buflen;
 
     if ((status = mpack_write_token(tok, &ptr, &ptrlen))) {
+      assert(status == MPACK_EOF);
       /* not enough space in *buf, write whatever we can and mark
        * the token as pending to be finished in a future call */
       writer->pending_written = 0;
@@ -341,7 +349,6 @@ static int mpack_write_token(const mpack_token_t *tok, char **buf,
       *buflen -= tok->length;
       return MPACK_OK;
     default:
-      assert(0);
       return MPACK_ERROR;
   }
 }
@@ -359,10 +366,9 @@ static int mpack_write_pending(char **buf, size_t *buflen,
     pending_len = tok->length - writer->pending_written;
     ptr = (char *)tok->data.chunk_ptr;
   } else {
-    if (mpack_write_token(tok, &ptr, &ptrlen)) {
-      assert(0);
-      return -1;
-    }
+    int status = mpack_write_token(tok, &ptr, &ptrlen);
+    UNUSED(status);
+    assert(status == MPACK_OK);
     tmplen = sizeof(tmp) - ptrlen;
     assert(writer->pending_written < tmplen);
     pending_len = tmplen - writer->pending_written;
@@ -442,7 +448,6 @@ static int write_float(char **buf, size_t *buflen, const mpack_token_t *tok)
            write4(buf, buflen, tok->data.value.hi) ||
            write4(buf, buflen, tok->data.value.lo);
   } else {
-    assert(0);
     return MPACK_ERROR;
   }
 }
