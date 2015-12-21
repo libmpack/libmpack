@@ -23,7 +23,7 @@
 #define SFORMAT PRId64
 #endif
 
-#include "mpack.h"
+#include "../src/mpack_conv.c"
 
 
 typedef struct {

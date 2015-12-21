@@ -1,8 +1,6 @@
-#include <assert.h>
 #include <string.h>
 
-#define MPACK_C
-#include "mpack.h"
+#include "mpack_core.h"
 
 #define UNUSED(p) (void)p;
 #define ADVANCE(buf, buflen) ((*buflen)--, (unsigned char)*((*buf)++))

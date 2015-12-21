@@ -4,7 +4,6 @@ workspace 'mpack'
   }
   language 'C'
   location 'build'
-  includedirs 'include'
   flags {'ExtraWarnings'}
   buildoptions {'-Wconversion', '-Wstrict-prototypes', '-pedantic'}
 
@@ -45,7 +44,7 @@ workspace 'mpack'
     kind 'StaticLib'
     buildoptions {'-ansi'}
     files {
-      'src/mpack.c'
+      'src/mpack_core.c'
     }
     filter {'configurations:coverage'}
       buildoptions {'--coverage'}
