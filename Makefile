@@ -1,87 +1,115 @@
 config ?= debug
-premake_config := $(config)
-
-FETCH ?= curl -L -o -
 SYSTEM ?= $(shell uname -s)
 
-ifeq "$(SYSTEM)" "Darwin"
-PREMAKE_PLAT := macosx
+ifeq ($(SYSTEM),Darwin)
+  LIBTOOL ?= glibtool
 else
-PREMAKE_PLAT := unix
+  LIBTOOL ?= libtool
 endif
 
-PREMAKE_URL_PREFIX := https://github.com/premake/premake-core/releases/download
-PREMAKE_VERSION ?= 5.0.0-alpha6
-PREMAKE_FETCH_URL := $(PREMAKE_URL_PREFIX)/v$(PREMAKE_VERSION)/premake-$(PREMAKE_VERSION)-src.zip
-PREMAKE_FALLBACK_DIR ?= $(shell pwd)/.deps/usr/bin
-PREMAKE_GET_CMD = mkdir -p .deps/src/premake && \
-									 cd .deps/src/premake && \
-									 $(FETCH) $(PREMAKE_FETCH_URL) > premake-src.zip && \
-									 unzip premake-src.zip && \
-									 cd premake-$(PREMAKE_VERSION) && \
-									 cd build/gmake.$(PREMAKE_PLAT) && \
-									 make config=release && \
-									 mkdir -p $(PREMAKE_FALLBACK_DIR) && \
-									 cp ../../bin/release/premake5 $(PREMAKE_FALLBACK_DIR)/premake5
-
-
-PREMAKE_BIN ?= $(shell which premake5 2> /dev/null)
-
-
-ifeq "$(strip $(PREMAKE_BIN))" ""
-PREMAKE_BIN := $(PREMAKE_FALLBACK_DIR)/premake5
-NEED_FETCH := $(shell [ -x $(PREMAKE_BIN) ] || echo "y")
-ifeq "$(NEED_FETCH)" "y"
-PREMAKE_BIN_TGT = $(PREMAKE_GET_CMD)
-endif
+ifneq ($(VERBOSE),1)
+  LIBTOOL += --quiet
 endif
 
-# ifneq "$(strip $(findstring clang,$(CC)))" ""
-# SYMBOLIZER := $(shell which $(subst clang,llvm-symbolizer,$(CC)))
-# export ASAN_OPTIONS := log_path=asan:detect_leaks=1
-# export ASAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
-# export MSAN_OPTIONS := log_path=msan
-# export MSAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
-# export UBSAN_OPTIONS := log_path=ubsan
-# export UBSAN_SYMBOLIZER_PATH := $(SYMBOLIZER)
-# endif
+ifneq "$(strip $(findstring clang,$(CC)))" ""
+  # When CC is set to clang-${VERSION}, it is very likely that other llvm
+  # tools are installed with the same version suffix, so use it for
+  # llvm-symbolizer
+  SYMBOLIZER ?= $(shell which $(subst clang,llvm-symbolizer,$(CC)))
+endif
 
--include local.mk
+SYMBOLIZER ?= /usr/bin/llvm-symbolizer
 
-all: bin
+.PHONY: all lib-bin test-bin tools test coverage profile clean \
+	compile_commands.json
 
-$(PREMAKE_BIN):
-	$(PREMAKE_BIN_TGT)
+all: lib-bin test-bin
 
-export CK_FORK := no
+XCFLAGS += -Wall -Wextra -Wconversion -Wstrict-prototypes -pedantic
 
-coverage:
-	find build/ -type f -name '*.gcda' -print0 | xargs -0 rm -f && \
-		$(MAKE) config=coverage test && \
-		cd build && \
-		find obj/coverage/mpack -type f -name '*.o' -print0 | xargs -0 gcov
+ifeq ($(ANSI),1)
+  # test helper to validate that the library works when compiled as c90
+  # (without native 32-bit integers, for example)
+  XCFLAGS += -DFORCE_32BIT_INTS -ansi
+else
+  XCFLAGS += -std=c99
+endif
 
-profile:
-	$(MAKE) config=profile test && \
-		gprof build/bin/profile/mpack-test gmon.out > gprof.txt && \
-		rm gmon.out && echo profiler output in gprof.txt
+-include .config/$(config).mk
+
+NAME    := mpack
+MAJOR   := 0
+MINOR   := 0
+PATCH   := 0
+VERSION := $(MAJOR).$(MINOR).$(PATCH)
+
+PREFIX  ?= /usr/local
+LIBDIR  ?= $(PREFIX)/lib
+INCDIR  ?= $(PREFIX)/include
+SRCDIR  ?= src
+TESTDIR ?= test
+BINDIR  ?= build
+OUTDIR  ?= $(BINDIR)/$(config)
+
+SRC     := mpack_core.c mpack_conv.c
+SRC     := $(addprefix $(SRCDIR)/,$(SRC))
+OBJ     := $(addprefix $(OUTDIR)/,$(SRC:.c=.lo))
+LIB     := $(OUTDIR)/lib$(NAME).la
+TSRC    := $(wildcard $(TESTDIR)/*.c) $(TESTDIR)/deps/tap/tap.c
+TOBJ    := $(addprefix $(OUTDIR)/,$(TSRC:.c=.lo))
+TEXE    := $(OUTDIR)/run-tests
+COVOUT  := $(OUTDIR)/gcov.txt
+PROFOUT := $(OUTDIR)/gprof.txt
+
+TEST_FILTER_OUT := --coverage -ansi -std=c99
+
+$(TOBJ): XCFLAGS := $(filter-out $(TEST_FILTER_OUT),$(XCFLAGS)) \
+	-std=gnu99 -Wno-conversion -Wno-unused-parameter
+
+tools: $(COMPILER) $(RUNNER)
+
+lib-bin: tools $(LIB)
+
+test-bin: lib-bin $(TEXE)
 
 test: test-bin
-	$(RUNNER) ./build/bin/$(config)/mpack-test
+	@$(RUNNER) $(TEXE)
 
-gdb: test-bin
-	gdb -x .gdb ./build/bin/$(config)/mpack-test
+coverage: tools $(COVOUT)
+	cat $<
 
-test-bin: bin
-	cd build && $(MAKE) config=$(premake_config) mpack-test
+profile: tools $(PROFOUT)
+	cat $<
 
-bin: build/Makefile
-	cd build && $(MAKE) config=$(premake_config) mpack
+compile_commands.json:
+	rm -f $(BINDIR)/compile_commands.json
+	$(MAKE) config=$(config) clean
+	bear -- $(MAKE) config=$(config)
+	mv compile_commands.json $(BINDIR)
 
-build/Makefile: $(PREMAKE_BIN)
-	$(PREMAKE_BIN) gmake
+$(COVOUT): $(SRC) $(TSRC)
+	find $(OUTDIR) -type f -name '*.gcda' -print0 | xargs -0 rm -f
+	$(MAKE) CFLAGS='-DNDEBUG -g --coverage' LDFLAGS=--coverage config=$(config) test
+	find $(OUTDIR)/src -type f -name '*.o' -print0 | \
+		xargs -0 gcov -lp > $@
+	rm *.c.gcov
+
+$(PROFOUT): $(SRC) $(TSRC)
+	$(MAKE) CFLAGS=-pg LDFLAGS=-pg config=$(config) test
+	gprof $(OUTDIR)/run-tests gmon.out > $@
+	rm gmon.out
 
 clean:
-	rm -rf build
+	rm -rf $(BINDIR)/$(config)
 
-.PHONY: test coverage gdb bin clean
+$(OUTDIR)/%.lo: %.c
+	@echo compile $< =\> $@
+	@$(LIBTOOL) --mode=compile --tag=CC $(CC) $(XCFLAGS) $(CFLAGS) -o $@ -c $<
+
+$(LIB): $(OBJ)
+	@echo link $^ =\> $@
+	@$(LIBTOOL) --mode=link --tag=CC $(CC) $(XLDFLAGS) $(LDFLAGS) -o $@ $^
+
+$(TEXE): $(LIB) $(TOBJ)
+	@echo link $^ =\> $@
+	@$(LIBTOOL) --mode=link --tag=CC $(CC) $(XLDFLAGS) $(LDFLAGS) -lm -g -O -o $@ $^

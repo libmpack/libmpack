@@ -3,6 +3,17 @@
 
 #include "mpack_core.h"
 
+#if ULLONG_MAX == 0xffffffffffffffff
+typedef long long mpack_sintmax_t;
+typedef unsigned long long mpack_uintmax_t;
+#elif UINT64_MAX == 0xffffffffffffffff
+typedef int64_t mpack_sintmax_t;
+typedef uint64_t mpack_uintmax_t;
+#else
+typedef mpack_sint32_t mpack_sintmax_t;
+typedef mpack_uint32_t mpack_uintmax_t;
+#endif
+
 #ifndef bool
 # define bool unsigned
 #endif

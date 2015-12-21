@@ -16,6 +16,10 @@ os:
 matrix:
   include:
     - os: linux
+      compiler: gcc
+      env:
+        - CONFIG=release ANSI=1
+    - os: linux
       env: CONFIG=release CFLAGS=-m32 LDFLAGS=-m32
       addons:
         apt:
@@ -24,27 +28,14 @@ matrix:
     - os: linux
       compiler: gcc
       env:
-        - CONFIG=coverage 
-        - RUNNER=.deps/usr/bin/qemu-armeb
-      addons:
-        apt:
-          packages:
-            - qemu-user-static
+        - CONFIG=armeb CFLAGS='-DNDEBUG -g --coverage' LDFLAGS=--coverage
       install:
         - pip install --user cpp-coveralls
-        - . .ci/arm_test_setup.sh
       after_success:
-        - coveralls -b build --gcov $(pwd)/.deps/usr/bin/armeb-linux-gnueabihf-gcov --gcov-options '\-lp'
-    - os: linux
-      compiler: gcc
-      env:
-        - CONFIG=release
-        - CFLAGS=-DFORCE_32BIT_INTS 
+        - coveralls -b . --gcov $(pwd)/.deps/usr/bin/armeb-linux-gnueabihf-gcov --gcov-options '\-lp'
     - os: osx
       env: CONFIG=release
       compiler: clang
-  allow_failures:
-    - os: osx
 
 script:
   make config=${CONFIG} test

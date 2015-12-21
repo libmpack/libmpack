@@ -1,0 +1,1 @@
+XCFLAGS += -O0 -ggdb -DDEBUG

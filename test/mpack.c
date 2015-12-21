@@ -23,8 +23,8 @@
 #define SFORMAT PRId64
 #endif
 
-#include "../src/mpack_conv.c"
-
+#include "../src/mpack_conv.h"
+#include "../src/mpack_core.h"
 
 typedef struct {
   bool done;

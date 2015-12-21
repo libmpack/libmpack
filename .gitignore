@@ -1,5 +1,5 @@
 /build/
 /.deps/
-local.mk
-gprof.txt
 gmon.out
+*.c.gcov
+compile_commands.json
