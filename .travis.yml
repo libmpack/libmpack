@@ -9,6 +9,7 @@ env:
     - CONFIG=ubsan
     - CONFIG=debug
     - CONFIG=release
+    - CONFIG=amalgamation
 
 os:
   - linux

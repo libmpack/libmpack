@@ -20,7 +20,7 @@ endif
 
 SYMBOLIZER ?= /usr/bin/llvm-symbolizer
 
-.PHONY: all lib-bin test-bin tools test coverage profile clean \
+.PHONY: all lib-bin test-bin tools amalgamation test coverage profile clean \
 	compile_commands.json
 
 all: lib-bin test-bin
@@ -34,8 +34,6 @@ ifeq ($(ANSI),1)
 else
   XCFLAGS += -std=c99
 endif
-
--include .config/$(config).mk
 
 NAME    := mpack
 MAJOR   := 0
@@ -53,20 +51,27 @@ OUTDIR  ?= $(BINDIR)/$(config)
 
 SRC     := core.c conv.c
 SRC     := $(addprefix $(SRCDIR)/,$(SRC))
+HDRS    := $(SRC:.c=.h)
 OBJ     := $(addprefix $(OUTDIR)/,$(SRC:.c=.lo))
 LIB     := $(OUTDIR)/lib$(NAME).la
 TSRC    := $(wildcard $(TESTDIR)/*.c) $(TESTDIR)/deps/tap/tap.c
 TOBJ    := $(addprefix $(OUTDIR)/,$(TSRC:.c=.lo))
 TEXE    := $(OUTDIR)/run-tests
+AMALG   := $(BINDIR)/$(NAME).c
+AMALG_H := $(AMALG:.c=.h)
 COVOUT  := $(OUTDIR)/gcov.txt
 PROFOUT := $(OUTDIR)/gprof.txt
 
 TEST_FILTER_OUT := --coverage -ansi -std=c99
 
+include .config/$(config).mk
+
 $(TOBJ): XCFLAGS := $(filter-out $(TEST_FILTER_OUT),$(XCFLAGS)) \
 	-std=gnu99 -Wno-conversion -Wno-unused-parameter
 
 tools: $(COMPILER) $(RUNNER)
+
+amalgamation: $(AMALG)
 
 lib-bin: tools $(LIB)
 
@@ -102,7 +107,7 @@ $(PROFOUT): $(SRC) $(TSRC)
 clean:
 	rm -rf $(BINDIR)/$(config)
 
-$(OUTDIR)/%.lo: %.c
+$(OUTDIR)/%.lo: %.c $(AMALG)
 	@echo compile $< =\> $@
 	@$(LIBTOOL) --mode=compile --tag=CC $(CC) $(XCFLAGS) $(CFLAGS) -o $@ -c $<
 
@@ -112,4 +117,13 @@ $(LIB): $(OBJ)
 
 $(TEXE): $(LIB) $(TOBJ)
 	@echo link $^ =\> $@
-	@$(LIBTOOL) --mode=link --tag=CC $(CC) $(XLDFLAGS) $(LDFLAGS) -lm -g -O -o $@ $^
+	@$(LIBTOOL) --mode=link --tag=CC $(CC) $(XLDFLAGS) $(LDFLAGS) -lm -g -O \
+		-o $@ $(LIB) $(TOBJ)
+
+$(AMALG_H): $(HDRS)
+	mkdir -p $(BINDIR)
+	cat $^ | sed '/^#include "/d' > $@
+
+$(AMALG): $(AMALG_H) $(SRC)
+	mkdir -p $(BINDIR)
+	cat $^ | sed '/^#include "/d' > $@

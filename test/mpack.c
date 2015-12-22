@@ -23,8 +23,11 @@
 #define SFORMAT PRId64
 #endif
 
-#include "../src/conv.h"
-#include "../src/core.h"
+#ifdef TEST_AMALGAMATION
+# include "../build/mpack.c"
+#else
+# include "../build/mpack.h"
+#endif
 
 typedef struct {
   bool done;
