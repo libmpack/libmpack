@@ -51,7 +51,7 @@ TESTDIR ?= test
 BINDIR  ?= build
 OUTDIR  ?= $(BINDIR)/$(config)
 
-SRC     := mpack_core.c mpack_conv.c
+SRC     := core.c conv.c
 SRC     := $(addprefix $(SRCDIR)/,$(SRC))
 OBJ     := $(addprefix $(OUTDIR)/,$(SRC:.c=.lo))
 LIB     := $(OUTDIR)/lib$(NAME).la

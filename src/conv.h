@@ -1,7 +1,7 @@
 #ifndef MPACK_CONV_H
 #define MPACK_CONV_H
 
-#include "mpack_core.h"
+#include "core.h"
 
 #if ULLONG_MAX == 0xffffffffffffffff
 typedef long long mpack_sintmax_t;
