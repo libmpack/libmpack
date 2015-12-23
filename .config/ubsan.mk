@@ -1,3 +1,4 @@
+include .config/release.mk
 XCFLAGS  += -fno-omit-frame-pointer -fno-optimize-sibling-calls \
 					-fno-sanitize-recover -fsanitize=undefined
 XLDFLAGS += -fsanitize=undefined

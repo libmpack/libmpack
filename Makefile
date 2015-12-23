@@ -20,7 +20,7 @@ endif
 
 SYMBOLIZER ?= /usr/bin/llvm-symbolizer
 
-.PHONY: all lib-bin test-bin tools amalgamation test coverage profile clean \
+.PHONY: all gdb lib-bin test-bin tools amalgamation test coverage profile clean \
 	compile_commands.json
 
 all: lib-bin test-bin
@@ -49,7 +49,7 @@ TESTDIR ?= test
 BINDIR  ?= build
 OUTDIR  ?= $(BINDIR)/$(config)
 
-SRC     := core.c conv.c
+SRC     := core.c conv.c object.c
 SRC     := $(addprefix $(SRCDIR)/,$(SRC))
 HDRS    := $(SRC:.c=.h)
 OBJ     := $(addprefix $(OUTDIR)/,$(SRC:.c=.lo))
@@ -79,6 +79,9 @@ test-bin: lib-bin $(TEXE)
 
 test: test-bin
 	@$(RUNNER) $(TEXE)
+
+gdb: test-bin
+	gdb -x .gdb $(TEXE)
 
 coverage: tools $(COVOUT)
 	cat $<

@@ -29,7 +29,8 @@ typedef struct mpack_value_s {
 
 
 #define MPACK_ESIZE ((size_t)(-1))
-#define MPACK_EREAD ((size_t)(-2))
+#define MPACK_ENOMEM ((size_t)(-2))
+#define MPACK_EREAD ((size_t)(-3))
 #define MPACK_ERRORED(s) (s >= MPACK_EREAD)
 
 #define MPACK_MAX_TOKEN_SIZE 12

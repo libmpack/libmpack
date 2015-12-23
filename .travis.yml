@@ -3,6 +3,8 @@ language: c
 compiler: clang
 
 env:
+  global:
+    - VERBOSE=1
   matrix:
     - CONFIG=asan
     - CONFIG=msan
@@ -10,6 +12,7 @@ env:
     - CONFIG=debug
     - CONFIG=release
     - CONFIG=amalgamation
+    - CONFIG=release ANSI=1
 
 os:
   - linux
@@ -18,9 +21,6 @@ matrix:
   include:
     - os: linux
       compiler: gcc
-      env:
-        - CONFIG=release ANSI=1
-    - os: linux
       env: CONFIG=release CFLAGS=-m32 LDFLAGS=-m32
       addons:
         apt:
@@ -30,13 +30,13 @@ matrix:
       compiler: gcc
       env:
         - CONFIG=armeb CFLAGS='-DNDEBUG -g --coverage' LDFLAGS=--coverage
-      install:
+      before_install:
         - pip install --user cpp-coveralls
       after_success:
         - coveralls -b . --gcov $(pwd)/.deps/usr/bin/armeb-linux-gnueabihf-gcov --gcov-options '\-lp'
     - os: osx
       env: CONFIG=release
-      compiler: clang
+      compiler: gcc
 
 script:
   make config=${CONFIG} test

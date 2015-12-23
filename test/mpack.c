@@ -29,127 +29,19 @@
 # include "../build/mpack.h"
 #endif
 
-typedef struct {
-  bool done;
-  char buf[0xffffff];
-  size_t bufpos;
-  struct json_stack {
-    size_t pos, length;
-    char close;
-  } stack[32];
-  size_t stackpos;
-} unpacker_test_data_t;
-
+bool done;
+char buf[0xffffff];
+size_t bufpos;
 mpack_token_t tokbuf[0xffffff];
 size_t tokbufpos;
-unpacker_test_data_t data;
-mpack_reader_t reader;
 mpack_writer_t writer;
 
 static void w(const char *fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
-  data.bufpos += (size_t)vsnprintf(data.buf + data.bufpos,
-      sizeof(data.buf) - data.bufpos, fmt, ap);
+  bufpos += (size_t)vsnprintf(buf + bufpos, sizeof(buf) - bufpos, fmt, ap);
   va_end(ap);
-}
-
-struct json_stack *top(void)
-{
-  if (!data.stackpos) {
-    return NULL;
-  }
-  return data.stack + data.stackpos - 1;
-}
-
-static void pop(size_t cnt)
-{
-  struct json_stack *s = top();
-  if (!s) {
-    data.done = true;
-    return;
-  }
-  s->pos += cnt;
-}
-
-static void push(size_t length, char close)
-{
-  struct json_stack *s = data.stack + data.stackpos++;
-  memset(s, 0, sizeof(*s));
-  s->length = length;
-  s->pos = 0;
-  s->close = close;
-}
-
-static void process_token(mpack_token_t *t)
-{
-  switch (t->type) {
-    case MPACK_TOKEN_NIL:
-      w("null"); pop(1); break;
-    case MPACK_TOKEN_BOOLEAN:
-      w(mpack_unpack_boolean(t) ? "true" : "false"); pop(1); break;
-    case MPACK_TOKEN_UINT:
-      w("%" UFORMAT, mpack_unpack_uint(t)); pop(1); break;
-    case MPACK_TOKEN_SINT:
-      w("%" SFORMAT, mpack_unpack_sint(t)); pop(1); break;
-    case MPACK_TOKEN_FLOAT: {
-      /* test both unpack_float implementations */
-      double d = mpack_unpack_float_fast(t), d2 = mpack_unpack_float_compat(t);
-      (void)(d2);
-      assert(d == d2);
-      w("%.*g", 17, d); pop(1);
-      if (round(d) == d && (fabs(d) < 10e3)) {
-        /* Need a trailing .0 to be parsed as float in the packer tests */
-        w(".0");
-      }
-      break;
-    } 
-    case MPACK_TOKEN_CHUNK:
-      w("%.*s", t->length, t->data.chunk_ptr); pop(t->length); break;
-    case MPACK_TOKEN_BIN:
-    case MPACK_TOKEN_STR:
-    case MPACK_TOKEN_EXT:
-      if (top() && top()->close == '}' && top()->pos % 2 == 0) {
-        w("\"");
-      } else if (t->type == MPACK_TOKEN_EXT) {
-        w("\"e:%02x:", t->data.ext_type);
-      } else {
-        w(t->type == MPACK_TOKEN_BIN ? "\"b:" : "\"s:");
-      }
-      push(t->length, '"');
-      break;
-    case MPACK_TOKEN_ARRAY:
-      w("["); push(t->length, ']'); break;
-    case MPACK_TOKEN_MAP:
-      w("{"); push(t->length, '}'); break;
-  }
-
-
-  while (data.stackpos) {
-    struct json_stack *s = top();
-
-    if (s->pos < s->length) {
-      if (s->pos) {
-        if (s->close == ']') {
-          w(",");
-        } else if (s->close == '}') {
-          w(s->pos % 2 ? ":" : ",");
-        }
-      }
-      break;
-    }
-    
-    if (s->close == '"') {
-      w("\"");
-    } else if (s->close == ']') {
-      w("]");
-    } else if (s->close == '}') {
-      w("}");
-    }
-    data.stackpos--;
-    pop(1);
-  }
 }
 
 static uint32_t item_count(const char *s)
@@ -270,14 +162,75 @@ void parse_json(char **s)
   }
 } 
 
-static void unpack_buf(const char *buf, size_t buflen)
+static void parse_cb(mpack_parser_t *parser, mpack_node_t *parent,
+    mpack_node_t *node)
 {
-  mpack_token_t toks[128];
-  while (!data.done && buflen) {
-    size_t cnt = mpack_read(&buf, &buflen, toks, ARRAY_SIZE(toks), &reader);
-    for (size_t i = 0; i < cnt; i++) {
-      process_token(toks + i);
-    }
+  (void)(parser);
+  mpack_token_t *t = &node->tok;
+  mpack_token_t *p = parent ? &parent->tok : NULL;
+
+  switch (t->type) {
+    case MPACK_TOKEN_NIL:
+      w("null"); break;
+    case MPACK_TOKEN_BOOLEAN:
+      w(mpack_unpack_boolean(t) ? "true" : "false"); break;
+    case MPACK_TOKEN_UINT:
+      w("%" UFORMAT, mpack_unpack_uint(t)); break;
+    case MPACK_TOKEN_SINT:
+      w("%" SFORMAT, mpack_unpack_sint(t)); break;
+    case MPACK_TOKEN_FLOAT: {
+      /* test both unpack_float implementations */
+      double d = mpack_unpack_float_fast(t), d2 = mpack_unpack_float_compat(t);
+      (void)(d2);
+      assert(d == d2);
+      w("%.*g", 17, d);
+      if (round(d) == d && (fabs(d) < 10e3)) {
+        /* Need a trailing .0 to be parsed as float in the packer tests */
+        w(".0");
+      }
+      break;
+    } 
+    case MPACK_TOKEN_CHUNK:
+      w("%.*s", t->length, t->data.chunk_ptr); break;
+    case MPACK_TOKEN_BIN:
+    case MPACK_TOKEN_STR:
+    case MPACK_TOKEN_EXT:
+      w("\"");
+      if (node->data) {
+        node->data = 0;
+      } else {
+        if (!p || p->type != MPACK_TOKEN_MAP || parent->pos % 2) {
+          if (t->type == MPACK_TOKEN_EXT) {
+            w("e:%02x:", t->data.ext_type);
+          } else {
+            w(t->type == MPACK_TOKEN_BIN ? "b:" : "s:");
+          }
+        }
+        node->data = (void *)1;
+      }
+      break;
+    case MPACK_TOKEN_ARRAY:
+    case MPACK_TOKEN_MAP:
+      if (node->data) {
+        w(t->type == MPACK_TOKEN_ARRAY ? "]" : "}");
+        node->data = 0;
+      } else {
+        w(t->type == MPACK_TOKEN_ARRAY ? "[" : "{");
+        node->data = (void *)1;
+      }
+      break;
+  }
+
+  if (!node->data && p && p->type < MPACK_TOKEN_BIN
+      && parent->pos < p->length - 1) {
+    w(p->type == MPACK_TOKEN_MAP ? (parent->pos % 2 ? "," : ":") : ",");
+  }
+}
+
+static void unpack_buf(mpack_parser_t *parser, const char *buf, size_t buflen)
+{
+  while (!done && buflen) {
+    done = mpack_parse(parser, &buf, &buflen, 1);
   }
 }
 
@@ -302,19 +255,18 @@ static void fixture_test(int fixture_idx)
   char repr[32];
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
+    mpack_parser_t parser;
     size_t cs = chunksizes[i];
     /* unpack test */
-    data.stackpos = 0;
-    data.done = false;
-    data.bufpos = 0;
-    mpack_reader_init(&reader);
+    done = false;
+    bufpos = 0;
+    mpack_parser_init(&parser, parse_cb);
 
-    for (size_t j = 0; !data.done; j = MIN(j + cs, fmsgpacklen - 1)) {
-      unpack_buf((const char *)fmsgpack + j, MIN(cs, fmsgpacklen - j));
+    for (size_t j = 0; !done; j = MIN(j + cs, fmsgpacklen - 1)) {
+      unpack_buf(&parser, (const char *)fmsgpack + j, MIN(cs, fmsgpacklen - j));
     }
 
-    is(data.buf, fjson, "unpack '%s' with chunksize of %zu",
-        repr, cs);
+    is(buf, fjson, "unpack '%s' with chunksize of %zu", repr, cs);
 
     /* pack test */
     char *j = fjson;
@@ -322,13 +274,13 @@ static void fixture_test(int fixture_idx)
     tokbufpos = 0;
     parse_json(&j);
     mpack_writer_init(&writer);
-    for (size_t j = 0; pos < tokbufpos; j = MIN(j + cs, sizeof(data.buf) - 1)) {
-      char *b = data.buf + j;
-      size_t bl = MIN(cs, sizeof(data.buf) - j);
+    for (size_t j = 0; pos < tokbufpos; j = MIN(j + cs, sizeof(buf) - 1)) {
+      char *b = buf + j;
+      size_t bl = MIN(cs, sizeof(buf) - j);
       pos += mpack_write(&b, &bl, tokbuf + pos, tokbufpos - pos, &writer);
     }
 
-    cmp_mem(data.buf, fmsgpack, fmsgpacklen, "pack '%s' with chunksize of %zu",
+    cmp_mem(buf, fmsgpack, fmsgpacklen, "pack '%s' with chunksize of %zu",
         repr, cs);
   }
 }
@@ -427,8 +379,25 @@ static void unpacking_c1_returns_eread(void)
   size_t inplen = sizeof(input);
   mpack_token_t tok;
   mpack_reader_init(&reader);
-  size_t res = mpack_read(&inp, &inplen, &tok, 1, &reader);
-  ok(MPACK_ERRORED(res) && res == MPACK_EREAD, "0xc1 returns MPACK_EREAD");
+  mpack_parser_t parser;
+  mpack_parser_init(&parser, parse_cb);
+  size_t res = mpack_read(&inp, &inplen, &tok, 1, &reader),
+         res2 = mpack_parse(&parser, &inp, &inplen, 1);
+  ok(MPACK_ERRORED(res) && res == MPACK_EREAD
+  && MPACK_ERRORED(res2) && res2 == MPACK_EREAD, "0xc1 returns MPACK_EREAD");
+}
+
+static void very_deep_objects_returns_enomem(void)
+{
+  mpack_parser_t parser;
+  mpack_parser_init_capacity(&parser, parse_cb, 2);
+  const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
+  const char *inp = (const char *)input;
+  size_t inplen = sizeof(input);
+  size_t res = mpack_parse(&parser, &inp, &inplen, 1);
+  ok(MPACK_ERRORED(res) && res == MPACK_ENOMEM && inplen == 1
+      && inp == (const char *)input + 2,
+      "very deep objects return MPACK_ENOMEM");
 }
 
 #ifdef NDEBUG
@@ -453,7 +422,7 @@ static void does_not_write_invalid_tokens(void)
 
 int main(void)
 {
-  int extra_test_count = 4;
+  int extra_test_count = 5;
 #ifdef NDEBUG
   extra_test_count += 2;
 #endif
@@ -464,6 +433,7 @@ int main(void)
   signed_positive_packs_with_unsigned_format();
   positive_signed_format_unpacks_as_unsigned();
   unpacking_c1_returns_eread();
+  very_deep_objects_returns_enomem();
 #ifdef NDEBUG
   does_not_write_invalid_tokens();
 #endif

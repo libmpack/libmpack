@@ -1,3 +1,4 @@
+include .config/release.mk
 XCFLAGS  += -fno-omit-frame-pointer -fno-optimize-sibling-calls \
 					-fsanitize=memory -fsanitize-memory-track-origins
 XLDFLAGS += -fsanitize=memory
