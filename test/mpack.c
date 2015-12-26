@@ -227,13 +227,6 @@ static void parse_cb(mpack_parser_t *parser, mpack_node_t *parent,
   }
 }
 
-static void unpack_buf(mpack_parser_t *parser, const char *buf, size_t buflen)
-{
-  while (!done && buflen) {
-    done = mpack_parse(parser, &buf, &buflen, 1);
-  }
-}
-
 /* Each unpack/pack test is executed multiple times, with each feeding data in
  * chunks of different sizes. */
 static const size_t chunksizes[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, SIZE_MAX};
@@ -261,27 +254,33 @@ static void fixture_test(int fixture_idx)
     done = false;
     bufpos = 0;
     mpack_parser_init(&parser, parse_cb);
+    char *b = (char *)fmsgpack;
+    size_t bl = cs;
 
-    for (size_t j = 0; !done; j = MIN(j + cs, fmsgpacklen - 1)) {
-      unpack_buf(&parser, (const char *)fmsgpack + j, MIN(cs, fmsgpacklen - j));
+    while (mpack_parse(&parser, (const char **)&b, &bl) != MPACK_OK) {
+      if (!bl) bl = cs;
     }
 
-    is(buf, fjson, "unpack '%s' with chunksize of %zu", repr, cs);
+    is(buf, fjson, cs == SIZE_MAX ?
+        "unpack '%s' in a single step" :
+        "unpack '%s' in steps of %zu", repr, cs);
 
     /* pack test */
-    char *j = fjson;
+    char *fj = fjson;
     size_t pos = 0;
     tokbufpos = 0;
-    parse_json(&j);
+    parse_json(&fj);
     mpack_writer_init(&writer);
-    for (size_t j = 0; pos < tokbufpos; j = MIN(j + cs, sizeof(buf) - 1)) {
-      char *b = buf + j;
-      size_t bl = MIN(cs, sizeof(buf) - j);
-      pos += mpack_write(&b, &bl, tokbuf + pos, tokbufpos - pos, &writer);
+    b = buf;
+    bl = MIN(cs, sizeof(buf));
+    while (pos < tokbufpos) {
+      if (mpack_write(&writer, &b, &bl, tokbuf + pos) == MPACK_OK) pos++;
+      if (!bl) bl = cs;
     }
 
-    cmp_mem(buf, fmsgpack, fmsgpacklen, "pack '%s' with chunksize of %zu",
-        repr, cs);
+    cmp_mem(buf, fmsgpack, fmsgpacklen, cs == SIZE_MAX ?
+        "pack '%s' in a single step" :
+        "pack '%s' in steps of %zu", repr, cs);
   }
 }
 
@@ -301,7 +300,8 @@ static void signed_positive_packs_with_unsigned_format(void)
   tokbuf[tokbufpos++] = mpack_pack_sint(0xffffffff);
   tokbuf[tokbufpos++] = mpack_pack_sint(0x7fffffffffffffff);
 #endif
-  mpack_write(&buf, &buflen, tokbuf, tokbufpos, &writer);
+  for (size_t i = 0; i < tokbufpos; i++)
+    mpack_write(&writer, &buf, &buflen, tokbuf + i);
   uint8_t expected[] = {
     0x00,
     0x01,
@@ -332,7 +332,8 @@ static void positive_signed_format_unpacks_as_unsigned(void)
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
   mpack_reader_init(&reader);
-  mpack_read(&inp, &inplen, toks, ARRAY_SIZE(toks), &reader);
+  for (size_t i = 0; i < ARRAY_SIZE(toks); i++)
+    mpack_read(&reader, &inp, &inplen, toks + i);
   mpack_uintmax_t expected[] = {
     0x7f,
     0x7fff,
@@ -381,10 +382,9 @@ static void unpacking_c1_returns_eread(void)
   mpack_reader_init(&reader);
   mpack_parser_t parser;
   mpack_parser_init(&parser, parse_cb);
-  size_t res = mpack_read(&inp, &inplen, &tok, 1, &reader),
-         res2 = mpack_parse(&parser, &inp, &inplen, 1);
-  ok(MPACK_ERRORED(res) && res == MPACK_EREAD
-  && MPACK_ERRORED(res2) && res2 == MPACK_EREAD, "0xc1 returns MPACK_EREAD");
+  int res = mpack_read(&reader, &inp, &inplen, &tok),
+      res2 = mpack_parse(&parser, &inp, &inplen);
+  ok(res == MPACK_ERROR && res2 == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
 static void very_deep_objects_returns_enomem(void)
@@ -394,14 +394,11 @@ static void very_deep_objects_returns_enomem(void)
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  size_t res = mpack_parse(&parser, &inp, &inplen, 1);
-  ok(MPACK_ERRORED(res) && res == MPACK_ENOMEM && inplen == 1
+  ok(mpack_parse(&parser, &inp, &inplen) == MPACK_NOMEM && inplen == 1
       && inp == (const char *)input + 2,
       "very deep objects return MPACK_ENOMEM");
 }
 
-#ifdef NDEBUG
-/* This test triggers failed assertions if NDEBUG is not defined */
 static void does_not_write_invalid_tokens(void)
 {
   mpack_writer_t writer;
@@ -412,20 +409,16 @@ static void does_not_write_invalid_tokens(void)
   size_t ptrlen = sizeof(buf);
   tok2 = mpack_pack_float_compat(5.5);
   tok2.length = 5;
-  ok(!mpack_write(&ptr, &ptrlen, &tok, 1, &writer),
+  ok(mpack_write(&writer, &ptr, &ptrlen, &tok) == MPACK_ERROR,
       "does not write invalid tokens 1");
   mpack_writer_init(&writer);
-  ok(!mpack_write(&ptr, &ptrlen, &tok2, 1, &writer),
+  ok(mpack_write(&writer, &ptr, &ptrlen, &tok2) == MPACK_ERROR,
       "does not write invalid tokens 2");
 }
-#endif
 
 int main(void)
 {
-  int extra_test_count = 5;
-#ifdef NDEBUG
-  extra_test_count += 2;
-#endif
+  int extra_test_count = 7;
   plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + extra_test_count);
   for (int i = 0; i < fixture_count; i++) {
     fixture_test(i);
@@ -434,8 +427,6 @@ int main(void)
   positive_signed_format_unpacks_as_unsigned();
   unpacking_c1_returns_eread();
   very_deep_objects_returns_enomem();
-#ifdef NDEBUG
   does_not_write_invalid_tokens();
-#endif
   done_testing();
 }

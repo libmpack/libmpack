@@ -9,12 +9,7 @@
 # define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #endif
 
-enum {
-  MPACK_ERROR = -1,
-  MPACK_OK = 0,
-  MPACK_EOF = 1
-};
-
+static int mpack_read_pending(const char **b, size_t *nl, mpack_reader_t *r);
 static int mpack_read_token(const char **buf, size_t *buflen,
     mpack_token_t *tok);
 static int value(mpack_token_type_t t, mpack_uint32_t l,
@@ -43,7 +38,8 @@ static mpack_value_t byte(unsigned char b);
 
 void mpack_reader_init(mpack_reader_t *reader)
 {
-  reader->pending_cnt = 0;
+  reader->ppos = 0;
+  reader->plen = 0;
   reader->passthrough = 0;
 }
 
@@ -52,108 +48,121 @@ void mpack_writer_init(mpack_writer_t *writer)
   writer->pending = NULL;
 }
 
-size_t mpack_read(const char **buf, size_t *buflen, mpack_token_t *tokbuf,
-    size_t tokbuflen, mpack_reader_t *reader)
+int mpack_read(mpack_reader_t *reader, const char **buf, size_t *buflen,
+    mpack_token_t *tok)
 {
-  /* TODO(tarruda): Function needs cleanup */
-  mpack_token_t *tok = tokbuf, *tokend = tokbuf + tokbuflen;
-  assert(*buflen && !MPACK_ERRORED(*buflen));
+  int status;
+  size_t initial_ppos, ptrlen, advanced;
+  const char *ptr, *ptr_save;
+  assert(*buf && *buflen);
 
-  for (; *buflen && tok < tokend; tok++) {
-    int status;
-    size_t ppos, ptrlen;
-    const char *ptr, *ptr_save;
-
-    if (reader->passthrough) {
-      /* pass data from str/bin/ext directly as a MPACK_TOKEN_CHUNK, adjusting
-       * *buf and *buflen */
-      tok->type = MPACK_TOKEN_CHUNK;
-      tok->data.chunk_ptr = *buf;
-      tok->length = MIN((mpack_uint32_t)*buflen, reader->passthrough);
-      reader->passthrough -= tok->length;
-      *buf += tok->length;
-      *buflen -= tok->length;
-      continue;
-    }
-
-    ppos = reader->pending_cnt;
-
-    if (ppos) {
-      /* If there's pending data, concatenate with *buf so it can be parsed as a
-       * whole */
-      size_t count = MIN(sizeof(reader->pending) - ppos, *buflen);
-      memcpy(reader->pending + ppos, *buf, count);
-      reader->pending_cnt += count;
-      ptr = reader->pending;
-      ptrlen = reader->pending_cnt;
-    } else {
-      ptr = *buf;
-      ptrlen = *buflen;
-    }
-
-    ptr_save = ptr;
-
-    if ((status = mpack_read_token(&ptr, &ptrlen, tok))) {
-      if (status == MPACK_ERROR) {
-        return MPACK_EREAD;
-      }
-      /* need more data */
-      if (!ppos) {
-        /* copy the remainder of *buf to reader->pending so it can be parsed
-         * later with more data. only necessary if !ppos since otherwise it
-         * would have been copied already. */
-        assert(*buflen < sizeof(reader->pending));
-        memcpy(reader->pending + reader->pending_cnt, *buf, *buflen);
-        reader->pending_cnt += *buflen;
-      }
-      *buf += *buflen;
-      *buflen = 0;
-      break;
-    }
-
-    reader->pending_cnt = 0;
-    *buflen -= (size_t)(ptr - ptr_save) - ppos; 
-    *buf = ptr;
-
-    if (tok->type > MPACK_TOKEN_MAP) {
-      reader->passthrough = tok->length;
-    }
+  if (reader->passthrough) {
+    /* pass data from str/bin/ext directly as a MPACK_TOKEN_CHUNK, adjusting
+     * *buf and *buflen */
+    tok->type = MPACK_TOKEN_CHUNK;
+    tok->data.chunk_ptr = *buf;
+    tok->length = MIN((mpack_uint32_t)*buflen, reader->passthrough);
+    reader->passthrough -= tok->length;
+    *buf += tok->length;
+    *buflen -= tok->length;
+    goto done;
   }
 
-  return (size_t)(tok - tokbuf);
+  initial_ppos = reader->ppos;
+
+  if (reader->plen) {
+    if (!mpack_read_pending(buf, buflen, reader)) {
+      return MPACK_EOF;
+    }
+    ptr = reader->pending;
+    ptrlen = reader->ppos;
+  } else {
+    ptr = *buf;
+    ptrlen = *buflen;
+  }
+
+  ptr_save = ptr;
+
+  if ((status = mpack_read_token(&ptr, &ptrlen, tok))) {
+    if (status != MPACK_EOF) return MPACK_ERROR;
+    /* need more data */
+    assert(!reader->plen);
+    /* read the remainder of *buf to reader->pending so it can be parsed
+     * later with more data. only required when reader->plen == 0 or else
+     * it would have been done already. */
+    reader->plen = tok->length + 1;
+    assert(reader->plen <= sizeof(reader->pending));
+    reader->ppos = 0;
+    status = mpack_read_pending(buf, buflen, reader);
+    assert(!status);
+    return MPACK_EOF;
+  }
+
+  advanced = (size_t)(ptr - ptr_save) - initial_ppos;
+  reader->plen = reader->ppos = 0;
+  *buflen -= advanced; 
+  *buf += advanced;
+
+  if (tok->type > MPACK_TOKEN_MAP) {
+    reader->passthrough = tok->length;
+  }
+
+done:
+  return MPACK_OK;
 }
 
-size_t mpack_write(char **buf, size_t *buflen, const mpack_token_t *tokbuf,
-    size_t tokbuflen, mpack_writer_t *writer)
+int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
+    const mpack_token_t *tok)
 {
-  const mpack_token_t *tok = tokbuf, *tokend = tokbuf + tokbuflen;
-  assert(*buflen);
+  int status;
+  char *ptr;
+  size_t ptrlen;
+  assert(*buf && *buflen);
 
-  if (writer->pending && mpack_write_pending(buf, buflen, tok, writer)) {
-    tok++;
-    writer->pending = NULL;
-  }
-
-  for (; *buflen && tok < tokend; tok++) {
-    int status;
-    char *ptr = *buf;
-    size_t ptrlen = *buflen;
-
-    if ((status = mpack_write_token(tok, &ptr, &ptrlen))) {
-      assert(status == MPACK_EOF);
-      /* not enough space in *buf, write whatever we can and mark
-       * the token as pending to be finished in a future call */
-      writer->pending_written = 0;
-      writer->pending = tok;
-      (void)mpack_write_pending(buf, buflen, tok, writer);
-      break;
+  if (writer->pending) {
+    if (mpack_write_pending(buf, buflen, tok, writer)) {
+      writer->pending = NULL;
+      return MPACK_OK;
+    } else {
+      assert(*buflen == 0);
+      return MPACK_EOF;
     }
-
-    *buflen -= (size_t)(ptr - *buf);
-    *buf = ptr;
   }
 
-  return (size_t)(tok - tokbuf);
+  ptr = *buf;
+  ptrlen = *buflen;
+
+  if ((status = mpack_write_token(tok, &ptr, &ptrlen))) {
+    if (status != MPACK_EOF) return status;
+    /* not enough space in *buf, write whatever we can and mark
+     * the token as pending to be finished in a future call */
+    writer->pending_written = 0;
+    writer->pending = tok;
+    status = mpack_write_pending(buf, buflen, tok, writer);
+    assert(!status && *buflen == 0);
+    return MPACK_EOF;
+  }
+
+  *buflen -= (size_t)(ptr - *buf);
+  *buf = ptr;
+  return MPACK_OK;
+}
+
+static int mpack_read_pending(const char **buf, size_t *buflen,
+    mpack_reader_t *reader)
+{
+  size_t count;
+  assert(reader->ppos < reader->plen);
+  count = MIN(reader->plen - reader->ppos, *buflen);
+  memcpy(reader->pending + reader->ppos, *buf, count);
+  reader->ppos += count;
+  if (reader->ppos < reader->plen) {
+    /* consume buffer since no token will be parsed yet. */
+    *buf += *buflen;
+    *buflen = 0;
+    return 0;
+  }
+  return 1;
 }
 
 static int mpack_read_token(const char **buf, size_t *buflen,
@@ -206,13 +215,15 @@ static int mpack_read_token(const char **buf, size_t *buflen,
       case 0xd6:  /* fixext 4 */
       case 0xd7:  /* fixext 8 */
       case 0xd8:  /* fixext 16 */
-        if (*buflen) {
-          tok->type = MPACK_TOKEN_EXT;
-          tok->length = TLEN(t, 0xd4);
-          tok->data.ext_type = ADVANCE(buf, buflen);
-          return MPACK_OK;
+        if (*buflen == 0) {
+          /* require only one extra byte for the type code */
+          tok->length = 1;
+          return MPACK_EOF;
         }
-        return MPACK_EOF;
+        tok->length = TLEN(t, 0xd4);
+        tok->type = MPACK_TOKEN_EXT;
+        tok->data.ext_type = ADVANCE(buf, buflen);
+        return MPACK_OK;
       case 0xd9:  /* str 8 */
       case 0xda:  /* str 16 */
       case 0xdb:  /* str 32 */
@@ -254,6 +265,7 @@ static int read_value(mpack_token_type_t type, mpack_uint32_t remaining,
     const char **buf, size_t *buflen, mpack_token_t *tok)
 {
   if (*buflen < remaining) {
+    tok->length = remaining;
     return MPACK_EOF;
   }
 
@@ -291,9 +303,10 @@ static int read_blob(mpack_token_type_t type, mpack_uint32_t tlen,
     const char **buf, size_t *buflen, mpack_token_t *tok)
 {
   mpack_token_t l;
-  size_t required = tlen + (type == MPACK_TOKEN_EXT ? 1 : 0);
+  mpack_uint32_t required = tlen + (type == MPACK_TOKEN_EXT ? 1 : 0);
 
   if (*buflen < required) {
+    tok->length = required;
     return MPACK_EOF;
   }
 
@@ -352,7 +365,7 @@ static int mpack_write_pending(char **buf, size_t *buflen,
     const mpack_token_t *tok, mpack_writer_t *writer)
 {
   int rv;
-  char tmp[MPACK_MAX_TOKEN_SIZE], *ptr = tmp;
+  char tmp[MPACK_MAX_TOKEN_LEN], *ptr = tmp;
   size_t pending_len, count, tmplen, ptrlen = sizeof(tmp);
   assert(writer->pending == tok);
 

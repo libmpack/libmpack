@@ -14,27 +14,22 @@ void mpack_parser_init_capacity(mpack_parser_t *parser, mpack_parse_cb cb,
   parser->size = 0;
 }
 
-size_t mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen,
-    size_t count)
+int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen)
 {
-  const char *buf_save;
-  size_t count_save = count, buflen_save, status;
-  assert(count && *buflen && !MPACK_ERRORED(count));
+  int status;
 
-  while (*buflen && count) {
-    mpack_node_t *top = parser->stack + parser->size, *parent;
-    buf_save = *buf;
-    buflen_save = *buflen;
-    status = mpack_read(buf, buflen, &top->tok, 1, &parser->reader);
+  while (*buflen) {
+    mpack_node_t *top, *parent;
 
-    if (!status) {
-      break;
-    } else if (MPACK_ERRORED(status)) {
-      goto err;
-    } else if (parser->size == parser->capacity) {
-      /* stack full, return NOMEM error */
-      status = MPACK_ENOMEM;
-      goto err;
+    if (parser->size == parser->capacity) {
+      /* stack full */
+      return MPACK_NOMEM;
+    }
+
+    top = parser->stack + parser->size;
+
+    if ((status = mpack_read(&parser->reader, buf, buflen, &top->tok))) {
+      return status;
     }
 
     /* push and invoke callback, passing parent node if any */
@@ -69,16 +64,10 @@ size_t mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen,
     } while (top && top->pos == top->tok.length);
 
     if (!parser->size) {
-      /* parsed one root-level object, reduce count. */
-      count--;
+      /* finished */
+      return MPACK_OK;
     }
   }
 
-  return count_save - count;
-
-err:
-  /* restore buffer positions to before the error */
-  *buf = buf_save;
-  *buflen = buflen_save;
-  return status;
+  return MPACK_EOF;
 }

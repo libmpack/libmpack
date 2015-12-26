@@ -84,10 +84,10 @@ gdb: test-bin
 	gdb -x .gdb $(TEXE)
 
 coverage: tools $(COVOUT)
-	cat $<
+	cat $(COVOUT)
 
 profile: tools $(PROFOUT)
-	cat $<
+	cat $(PROFOUT)
 
 compile_commands.json:
 	rm -f $(BINDIR)/compile_commands.json

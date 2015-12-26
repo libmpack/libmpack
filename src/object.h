@@ -29,7 +29,7 @@ struct mpack_parser_s {
 void mpack_parser_init(mpack_parser_t *p, mpack_parse_cb cb);
 void mpack_parser_init_capacity(mpack_parser_t *p, mpack_parse_cb cb,
     size_t md);
-size_t mpack_parse(mpack_parser_t *p, const char **b, size_t *bl, size_t c);
+int mpack_parse(mpack_parser_t *p, const char **b, size_t *bl);
 
 
 #endif  /* MPACK_OBJECT_H */

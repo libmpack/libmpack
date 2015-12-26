@@ -28,12 +28,14 @@ typedef struct mpack_value_s {
 } mpack_value_t;
 
 
-#define MPACK_ESIZE ((size_t)(-1))
-#define MPACK_ENOMEM ((size_t)(-2))
-#define MPACK_EREAD ((size_t)(-3))
-#define MPACK_ERRORED(s) (s >= MPACK_EREAD)
+enum {
+  MPACK_OK = 0,
+  MPACK_EOF = 1,
+  MPACK_NOMEM = 2,
+  MPACK_ERROR = 3
+};
 
-#define MPACK_MAX_TOKEN_SIZE 12
+#define MPACK_MAX_TOKEN_LEN 9  /* 64-bit ints/floats plus type code */
 
 typedef enum {
   MPACK_TOKEN_NIL       = 1,
@@ -61,8 +63,8 @@ typedef struct mpack_token_s {
 } mpack_token_t;
 
 typedef struct mpack_reader_s {
-  char pending[MPACK_MAX_TOKEN_SIZE];
-  size_t pending_cnt;
+  char pending[MPACK_MAX_TOKEN_LEN];
+  size_t ppos, plen;
   mpack_uint32_t passthrough;
 } mpack_reader_t;
 
@@ -73,9 +75,9 @@ typedef struct mpack_writer_s {
 
 void mpack_reader_init(mpack_reader_t *r);
 void mpack_writer_init(mpack_writer_t *w);
-size_t mpack_read(const char **b, size_t *bl, mpack_token_t *tb, size_t tbl,
-    mpack_reader_t *r);
-size_t mpack_write(char **b, size_t *bl, const mpack_token_t *tb, size_t tbl,
-    mpack_writer_t *w);
+int mpack_read(mpack_reader_t *r, const char **b, size_t *bl,
+    mpack_token_t *tok);
+int mpack_write(mpack_writer_t *w, char **b, size_t *bl,
+    const mpack_token_t *tok);
 
 #endif  /* MPACK_CORE_H */
