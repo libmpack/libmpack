@@ -162,10 +162,10 @@ void parse_json(char **s)
   }
 } 
 
-static void parse_cb(mpack_parser_t *parser, mpack_node_t *parent,
+static void parse_cb(mpack_stack_t *stack, mpack_node_t *parent,
     mpack_node_t *node)
 {
-  (void)(parser);
+  (void)(stack);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
 
@@ -332,7 +332,7 @@ static void positive_signed_format_unpacks_as_unsigned(void)
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
   mpack_reader_init(&reader);
-  for (size_t i = 0; i < ARRAY_SIZE(toks); i++)
+  for (size_t i = 0; i < ARRAY_SIZE(toks) && inplen; i++)
     mpack_read(&reader, &inp, &inplen, toks + i);
   mpack_uintmax_t expected[] = {
     0x7f,
@@ -390,7 +390,8 @@ static void unpacking_c1_returns_eread(void)
 static void very_deep_objects_returns_enomem(void)
 {
   mpack_parser_t parser;
-  mpack_parser_init_capacity(&parser, parse_cb, 2);
+  mpack_parser_init(&parser, parse_cb);
+  parser.stack.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);

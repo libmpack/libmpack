@@ -1,69 +1,81 @@
 #include "object.h"
 
-void mpack_parser_init(mpack_parser_t *parser, mpack_parse_cb cb)
+void mpack_stack_init(mpack_stack_t *stack, mpack_stack_cb cb)
 {
-  mpack_parser_init_capacity(parser, cb, MPACK_MAX_OBJECT_DEPTH);
+  stack->cb = cb;
+  stack->capacity = MPACK_MAX_OBJECT_DEPTH;
+  stack->size = 0;
 }
 
-void mpack_parser_init_capacity(mpack_parser_t *parser, mpack_parse_cb cb,
-    size_t capacity)
+int mpack_stack_full(mpack_stack_t *stack)
 {
+  return stack->size == stack->capacity;
+}
+
+void mpack_stack_push(mpack_stack_t *stack, mpack_token_t *tok)
+{
+  mpack_node_t *top;
+  assert(stack->size < stack->capacity);
+  top = stack->items + stack->size;
+  top->tok = *tok;
+  top->data = NULL;
+  top->pos = 0;
+  /* increase size and invoke callback, passing parent node if any */
+  stack->size++;
+  stack->cb(stack, stack->items < top ? top - 1 : NULL, top);
+}
+
+void mpack_stack_pop_processed(mpack_stack_t *stack)
+{
+  mpack_node_t *top, *parent;
+  assert(stack->size);
+  top = stack->items + stack->size - 1;
+  parent = stack->items < top ? top - 1 : NULL;
+
+  do {
+    if (top->tok.type > MPACK_TOKEN_CHUNK) {
+      if (top->pos < top->tok.length) {
+        /* continue processing children */
+        break;
+      } else {
+        /* finished processing container, invoke the callback again to notify
+         * the stack client */
+        stack->cb(stack, parent, top);
+      }
+    }
+
+    if (parent) {
+      /* we use parent->tok.length to keep track of how many children remain.
+       * update it to reflect the processed node. */
+      parent->pos += top->tok.type == MPACK_TOKEN_CHUNK ? top->tok.length : 1;
+    }
+
+    /* pop and update top/parent */
+    stack->size--;
+    top = parent;
+    parent = stack->items < top ? top - 1 : NULL;
+  } while (top && top->pos == top->tok.length);
+}
+
+void mpack_parser_init(mpack_parser_t *parser, mpack_stack_cb cb)
+{
+  mpack_stack_init(&parser->stack, cb);
   mpack_reader_init(&parser->reader);
-  parser->cb = cb;
-  parser->capacity = capacity;
-  parser->size = 0;
 }
 
 int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen)
 {
-  int status;
-
   while (*buflen) {
-    mpack_node_t *top, *parent;
+    int fail;
+    mpack_token_t tok;
 
-    if (parser->size == parser->capacity) {
-      /* stack full */
-      return MPACK_NOMEM;
-    }
+    if (mpack_stack_full(&parser->stack)) return MPACK_NOMEM;
+    if ((fail = mpack_read(&parser->reader, buf, buflen, &tok))) return fail;
 
-    top = parser->stack + parser->size;
+    mpack_stack_push(&parser->stack, &tok);
+    mpack_stack_pop_processed(&parser->stack);
 
-    if ((status = mpack_read(&parser->reader, buf, buflen, &top->tok))) {
-      return status;
-    }
-
-    /* push and invoke callback, passing parent node if any */
-    top->data = NULL;
-    top->pos = 0;
-    parent = parser->stack < top ? top - 1 : NULL;
-    parser->size++;
-    parser->cb(parser, parent, top);
-
-    do {
-      if (top->tok.type > MPACK_TOKEN_CHUNK) {
-        if (top->pos < top->tok.length) {
-          /* continue parsing children */
-          break;
-        } else {
-          /* empty container, invoke the callback again to notify that it is
-           * finished */
-          parser->cb(parser, parent, top);
-        }
-      }
-
-      if (parent) {
-        /* we use parent->tok.length to keep track of how many children remain.
-         * update it to reflect the processed node. */
-        parent->pos += top->tok.type == MPACK_TOKEN_CHUNK ? top->tok.length : 1;
-      }
-
-      /* pop and update top/parent */
-      parser->size--;
-      top = parent;
-      parent = parser->stack < top ? top - 1 : NULL;
-    } while (top && top->pos == top->tok.length);
-
-    if (!parser->size) {
+    if (!parser->stack.size) {
       /* finished */
       return MPACK_OK;
     }
