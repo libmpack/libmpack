@@ -162,10 +162,8 @@ void parse_json(char **s)
   }
 } 
 
-static void parse_cb(mpack_stack_t *stack, mpack_node_t *parent,
-    mpack_node_t *node)
+static void parse_begin(mpack_node_t *node, mpack_node_t *parent)
 {
-  (void)(stack);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
 
@@ -196,34 +194,40 @@ static void parse_cb(mpack_stack_t *stack, mpack_node_t *parent,
     case MPACK_TOKEN_STR:
     case MPACK_TOKEN_EXT:
       w("\"");
-      if (node->data) {
-        node->data = 0;
-      } else {
-        if (!p || p->type != MPACK_TOKEN_MAP || parent->pos % 2) {
-          if (t->type == MPACK_TOKEN_EXT) {
-            w("e:%02x:", t->data.ext_type);
-          } else {
-            w(t->type == MPACK_TOKEN_BIN ? "b:" : "s:");
-          }
+      if (!p || p->type != MPACK_TOKEN_MAP || parent->pos % 2) {
+        if (t->type == MPACK_TOKEN_EXT) {
+          w("e:%02x:", t->data.ext_type);
+        } else {
+          w(t->type == MPACK_TOKEN_BIN ? "b:" : "s:");
         }
-        node->data = (void *)1;
       }
       break;
     case MPACK_TOKEN_ARRAY:
+      w("["); break;
     case MPACK_TOKEN_MAP:
-      if (node->data) {
-        w(t->type == MPACK_TOKEN_ARRAY ? "]" : "}");
-        node->data = 0;
-      } else {
-        w(t->type == MPACK_TOKEN_ARRAY ? "[" : "{");
-        node->data = (void *)1;
-      }
-      break;
+      w("{"); break;
+  }
+}
+
+static void parse_end(mpack_node_t *node, mpack_node_t *parent)
+{
+  mpack_token_t *t = &node->tok;
+  mpack_token_t *p = parent ? &parent->tok : NULL;
+
+  switch (t->type) {
+    case MPACK_TOKEN_BIN:
+    case MPACK_TOKEN_STR:
+    case MPACK_TOKEN_EXT:
+      w("\""); break;
+    case MPACK_TOKEN_ARRAY:
+      w("]"); break;
+    case MPACK_TOKEN_MAP:
+      w("}"); break;
+    default: break;
   }
 
-  if (!node->data && p && p->type < MPACK_TOKEN_BIN
-      && parent->pos < p->length - 1) {
-    w(p->type == MPACK_TOKEN_MAP ? (parent->pos % 2 ? "," : ":") : ",");
+  if (p && p->type < MPACK_TOKEN_BIN && parent->pos < p->length) {
+    w(p->type == MPACK_TOKEN_MAP ? (parent->pos % 2 ? ":" : ",") : ",");
   }
 }
 
@@ -253,11 +257,16 @@ static void fixture_test(int fixture_idx)
     /* unpack test */
     done = false;
     bufpos = 0;
-    mpack_parser_init(&parser, parse_cb);
+    mpack_parser_init(&parser);
+    mpack_node_t *node, *parent;
     char *b = (char *)fmsgpack;
     size_t bl = cs;
 
-    while (mpack_parse(&parser, (const char **)&b, &bl) != MPACK_OK) {
+    for (;;) {
+      int status = mpack_parse(&parser, (const char **)&b, &bl, &node, &parent);
+      if (status == MPACK_OK) break;
+      else if (status == MPACK_NODE_ENTER) parse_begin(node, parent);
+      else if (status == MPACK_NODE_EXIT) parse_end(node, parent);
       if (!bl) bl = cs;
     }
 
@@ -381,23 +390,27 @@ static void unpacking_c1_returns_eread(void)
   mpack_token_t tok;
   mpack_reader_init(&reader);
   mpack_parser_t parser;
-  mpack_parser_init(&parser, parse_cb);
+  mpack_parser_init(&parser);
+  mpack_node_t *node, *parent;
   int res = mpack_read(&reader, &inp, &inplen, &tok),
-      res2 = mpack_parse(&parser, &inp, &inplen);
+      res2 = mpack_parse(&parser, &inp, &inplen, &node, &parent);
   ok(res == MPACK_ERROR && res2 == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
 static void very_deep_objects_returns_enomem(void)
 {
   mpack_parser_t parser;
-  mpack_parser_init(&parser, parse_cb);
-  parser.stack.capacity = 2;
+  mpack_node_t *node, *parent;
+  mpack_parser_init(&parser);
+  parser.walker.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  ok(mpack_parse(&parser, &inp, &inplen) == MPACK_NOMEM && inplen == 1
-      && inp == (const char *)input + 2,
-      "very deep objects return MPACK_ENOMEM");
+  ok(mpack_parse(&parser, &inp, &inplen, &node, &parent) == MPACK_NODE_ENTER
+  && mpack_parse(&parser, &inp, &inplen, &node, &parent) == MPACK_NODE_ENTER
+  && mpack_parse(&parser, &inp, &inplen, &node, &parent) == MPACK_NOMEM
+  && inplen == 1 && inp == (const char *)input + 2,
+  "very deep objects return MPACK_ENOMEM");
 }
 
 static void does_not_write_invalid_tokens(void)

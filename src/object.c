@@ -1,85 +1,102 @@
 #include "object.h"
 
-void mpack_stack_init(mpack_stack_t *stack, mpack_stack_cb cb)
+#define PARENT(s, n) ((s)->items < n ? n - 1 : NULL)
+
+static void mpack_walker_init(mpack_walker_t *w);
+static int mpack_walker_full(mpack_walker_t *w);
+static mpack_node_t *mpack_walker_push(mpack_walker_t *w);
+static mpack_node_t *mpack_walker_pop(mpack_walker_t *w);
+
+void mpack_parser_init(mpack_parser_t *parser)
 {
-  stack->cb = cb;
-  stack->capacity = MPACK_MAX_OBJECT_DEPTH;
-  stack->size = 0;
-}
-
-int mpack_stack_full(mpack_stack_t *stack)
-{
-  return stack->size == stack->capacity;
-}
-
-void mpack_stack_push(mpack_stack_t *stack, mpack_token_t *tok)
-{
-  mpack_node_t *top;
-  assert(stack->size < stack->capacity);
-  top = stack->items + stack->size;
-  top->tok = *tok;
-  top->data = NULL;
-  top->pos = 0;
-  /* increase size and invoke callback, passing parent node if any */
-  stack->size++;
-  stack->cb(stack, stack->items < top ? top - 1 : NULL, top);
-}
-
-void mpack_stack_pop_processed(mpack_stack_t *stack)
-{
-  mpack_node_t *top, *parent;
-  assert(stack->size);
-  top = stack->items + stack->size - 1;
-  parent = stack->items < top ? top - 1 : NULL;
-
-  do {
-    if (top->tok.type > MPACK_TOKEN_CHUNK) {
-      if (top->pos < top->tok.length) {
-        /* continue processing children */
-        break;
-      } else {
-        /* finished processing container, invoke the callback again to notify
-         * the stack client */
-        stack->cb(stack, parent, top);
-      }
-    }
-
-    if (parent) {
-      /* we use parent->tok.length to keep track of how many children remain.
-       * update it to reflect the processed node. */
-      parent->pos += top->tok.type == MPACK_TOKEN_CHUNK ? top->tok.length : 1;
-    }
-
-    /* pop and update top/parent */
-    stack->size--;
-    top = parent;
-    parent = stack->items < top ? top - 1 : NULL;
-  } while (top && top->pos == top->tok.length);
-}
-
-void mpack_parser_init(mpack_parser_t *parser, mpack_stack_cb cb)
-{
-  mpack_stack_init(&parser->stack, cb);
+  mpack_walker_init(&parser->walker);
   mpack_reader_init(&parser->reader);
 }
 
-int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen)
+int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen,
+    mpack_node_t **node, mpack_node_t **parent)
 {
-  while (*buflen) {
-    int fail;
-    mpack_token_t tok;
-
-    if (mpack_stack_full(&parser->stack)) return MPACK_NOMEM;
-    if ((fail = mpack_read(&parser->reader, buf, buflen, &tok))) return fail;
-
-    mpack_stack_push(&parser->stack, &tok);
-    mpack_stack_pop_processed(&parser->stack);
-
-    if (!parser->stack.size) {
-      /* finished */
-      return MPACK_OK;
-    }
+  if (parser->walker.state == MPACK_OK) {
+    parser->walker.state = MPACK_NODE_ENTER;
+    return MPACK_OK;
   }
 
-  return MPACK_EOF;
+  for (;;) {
+    if (parser->walker.state == MPACK_NODE_ENTER) {
+      int fail;
+
+      if (mpack_walker_full(&parser->walker)) {
+        return MPACK_NOMEM;
+      }
+
+      *node = mpack_walker_push(&parser->walker);
+
+      if ((fail = mpack_read(&parser->reader, buf, buflen, &(*node)->tok))) {
+        parser->walker.size--;
+        return fail;
+      }
+
+      *parent = PARENT(&parser->walker, *node);
+      parser->walker.state = MPACK_NODE_EXIT;
+      return MPACK_NODE_ENTER;
+    } else {
+      assert(parser->walker.state == MPACK_NODE_EXIT);
+      *node = mpack_walker_pop(&parser->walker);
+
+      if (*node) {
+        *parent = PARENT(&parser->walker, *node);
+        if (*parent == NULL) parser->walker.state = MPACK_OK;
+        return MPACK_NODE_EXIT;
+      } else {
+        parser->walker.state = MPACK_NODE_ENTER;
+      }
+    }
+  }
 }
+
+static void mpack_walker_init(mpack_walker_t *walker)
+{
+  walker->state = MPACK_NODE_ENTER;
+  walker->capacity = MPACK_MAX_OBJECT_DEPTH;
+  walker->size = 0;
+}
+
+static int mpack_walker_full(mpack_walker_t *walker)
+{
+  return walker->size == walker->capacity;
+}
+
+static mpack_node_t *mpack_walker_push(mpack_walker_t *walker)
+{
+  mpack_node_t *top;
+  assert(walker->size < walker->capacity);
+  top = walker->items + walker->size;
+  top->data = NULL;
+  top->pos = 0;
+  /* increase size and invoke callback, passing parent node if any */
+  walker->size++;
+  return top;
+}
+
+static mpack_node_t *mpack_walker_pop(mpack_walker_t *walker)
+{
+  mpack_node_t *top, *parent;
+  assert(walker->size);
+  top = walker->items + walker->size - 1;
+
+  if (top->tok.type > MPACK_TOKEN_CHUNK && top->pos < top->tok.length) {
+    /* continue processing children */
+    return NULL;
+  }
+
+  parent = PARENT(walker, top);
+  if (parent) {
+    /* we use parent->tok.length to keep track of how many children remain.
+     * update it to reflect the processed node. */
+    parent->pos += top->tok.type == MPACK_TOKEN_CHUNK ? top->tok.length : 1;
+  }
+
+  walker->size--;
+  return top;
+}
+

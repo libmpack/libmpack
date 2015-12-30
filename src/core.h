@@ -31,8 +31,7 @@ typedef struct mpack_value_s {
 enum {
   MPACK_OK = 0,
   MPACK_EOF = 1,
-  MPACK_NOMEM = 2,
-  MPACK_ERROR = 3
+  MPACK_ERROR = 2
 };
 
 #define MPACK_MAX_TOKEN_LEN 9  /* 64-bit ints/floats plus type code */
