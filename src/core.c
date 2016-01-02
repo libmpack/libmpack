@@ -347,7 +347,7 @@ static int mpack_write_token(const mpack_token_t *tok, char **buf,
     case MPACK_TOKEN_ARRAY:
       return write_array(buf, buflen, tok->length);
     case MPACK_TOKEN_MAP:
-      return write_map(buf, buflen, tok->length);
+      return write_map(buf, buflen, tok->length / 2);
     case MPACK_TOKEN_CHUNK:
       if (*buflen < tok->length) {
         return MPACK_EOF;

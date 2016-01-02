@@ -25,10 +25,7 @@ int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen,
     if (parser->walker.state == MPACK_NODE_ENTER) {
       int fail;
 
-      if (mpack_walker_full(&parser->walker)) {
-        return MPACK_NOMEM;
-      }
-
+      if (mpack_walker_full(&parser->walker)) return MPACK_NOMEM;
       *node = mpack_walker_push(&parser->walker);
 
       if ((fail = mpack_read(&parser->reader, buf, buflen, &(*node)->tok))) {
@@ -52,6 +49,51 @@ int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen,
       }
     }
   }
+}
+
+void mpack_unparser_init(mpack_unparser_t *unparser)
+{
+  mpack_walker_init(&unparser->walker);
+  mpack_writer_init(&unparser->writer);
+}
+
+int mpack_unparse(mpack_unparser_t *unparser, char **buf, size_t *buflen,
+    mpack_node_t **node, mpack_node_t **parent)
+{
+  if (unparser->walker.state == MPACK_OK) {
+    unparser->walker.state = MPACK_NODE_ENTER;
+    return MPACK_OK;
+  }
+
+  while (*buflen) {
+    if (unparser->walker.state == MPACK_NODE_ENTER) {
+
+      if (mpack_walker_full(&unparser->walker)) return MPACK_NOMEM;
+      *node = mpack_walker_push(&unparser->walker);
+      *parent = PARENT(&unparser->walker, *node);
+      unparser->walker.state = -1;
+
+      return MPACK_NODE_ENTER;
+    } else if (unparser->walker.state == -1) {
+      int fail;
+      if ((fail = mpack_write(&unparser->writer, buf, buflen, &(*node)->tok)))
+        return fail;
+      unparser->walker.state = MPACK_NODE_EXIT;
+    } else {
+      assert(unparser->walker.state == MPACK_NODE_EXIT);
+      *node = mpack_walker_pop(&unparser->walker);
+
+      if (*node) {
+        *parent = PARENT(&unparser->walker, *node);
+        if (*parent == NULL) unparser->walker.state = MPACK_OK;
+        return MPACK_NODE_EXIT;
+      } else {
+        unparser->walker.state = MPACK_NODE_ENTER;
+      }
+    }
+  }
+
+  return MPACK_EOF;
 }
 
 static void mpack_walker_init(mpack_walker_t *walker)

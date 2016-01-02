@@ -29,12 +29,8 @@
 # include "../build/mpack.h"
 #endif
 
-bool done;
-char buf[0xffffff];
-size_t bufpos;
-mpack_token_t tokbuf[0xffffff];
-size_t tokbufpos;
-mpack_writer_t writer;
+static char buf[0xffffff];
+static size_t bufpos;
 
 static void w(const char *fmt, ...)
 {
@@ -59,24 +55,32 @@ static uint32_t item_count(const char *s)
   return count;
 }
 
-void parse_json(char **s)
+static void unparse_begin(mpack_node_t *node, mpack_node_t *parent)
 {
-  while (**s == ' ' || **s == ',') {
-    (*s)++;
+  char *p = parent ? parent->data : node->data;
+
+  if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
+    node->tok = mpack_pack_chunk(p, parent->tok.length);
+    p += parent->tok.length;
+    goto end;
   }
 
-  switch (**s) {
+  while (*p == ' ' || *p == ',' || *p == ':') {
+    p++;
+  }
+
+  switch (*p) {
     case 'n':
-      tokbuf[tokbufpos++] = mpack_pack_nil();
-      *s += 4;
+      node->tok = mpack_pack_nil();
+      p += 4;
       break;
     case 'f':
-      *s += 5;
-      tokbuf[tokbufpos++] = mpack_pack_boolean(false);
+      node->tok = mpack_pack_boolean(false);
+      p += 5;
       break;
     case 't':
-      *s += 4;
-      tokbuf[tokbufpos++] = mpack_pack_boolean(true);
+      node->tok = mpack_pack_boolean(true);
+      p += 4;
       break;
     case '0':
     case '1':
@@ -91,76 +95,81 @@ void parse_json(char **s)
     case '.':
     case '+':
     case '-': {
-      char *s2 = *s;
-      double d = strtod(*s, &s2);
-      size_t l = (size_t)(s2 - *s);
+      char *p2 = p;
+      double d = strtod(p, &p2);
+      size_t l = (size_t)(p2 - p);
       char tmp[256];
-      memcpy(tmp, *s, l);
+      memcpy(tmp, p, l);
       tmp[l] = 0;
-      *s = s2;
+      p = p2;
       if (strchr(tmp, '.') || strchr(tmp, 'e')) {
-        tokbuf[tokbufpos++] = mpack_pack_float_fast(d);
+        node->tok = mpack_pack_float_fast(d);
         {
           /* test both pack_float implementations */
-          mpack_token_t tok = tokbuf[tokbufpos - 1];
-          mpack_token_t tok2 = mpack_pack_float_compat(d);
+          mpack_token_t tok = mpack_pack_float_compat(d);
           (void)(tok);
-          (void)(tok2);
-          assert(tok2.data.value.lo == tok.data.value.lo &&
-              tok2.data.value.hi == tok.data.value.hi);
+          assert(node->tok.data.value.lo == tok.data.value.lo &&
+              node->tok.data.value.hi == tok.data.value.hi);
         }
       } else {
-        tokbuf[tokbufpos++] = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
+        node->tok = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
       }
       break;
     }
     case '"': {
-      (*s)++;
-      char *s2 = strchr(*s, '"');
-      mpack_uint32_t len = (mpack_uint32_t)(s2 - *s);
-      switch (**s) {
+      p++;
+      char *s2 = strchr(p, '"');
+      mpack_uint32_t len = (mpack_uint32_t)(s2 - p);
+      switch (*p) {
         case 's':
-          tokbuf[tokbufpos++] = mpack_pack_str(len - 2);
-          tokbuf[tokbufpos++] = mpack_pack_chunk(*s + 2, len - 2);
+          node->tok = mpack_pack_str(len - 2);
+          p += 2;
           break;
         case 'b':
-          tokbuf[tokbufpos++] = mpack_pack_bin(len - 2);
-          tokbuf[tokbufpos++] = mpack_pack_chunk(*s + 2, len - 2);
+          node->tok = mpack_pack_bin(len - 2);
+          p += 2;
           break;
         case 'e':
-          tokbuf[tokbufpos++] = mpack_pack_ext((int)strtol(*s + 2, NULL, 16), len - 5);
-          tokbuf[tokbufpos++] = mpack_pack_chunk(*s + 5, len - 5);
+          node->tok = mpack_pack_ext((int)strtol(p + 2, NULL, 16), len - 5);
+          p += 5;
           break;
         default:
-          tokbuf[tokbufpos++] = mpack_pack_str(len);
-          tokbuf[tokbufpos++] = mpack_pack_chunk(*s, len);
+          node->tok = mpack_pack_str(len);
           break;
       }
-      *s = s2 + 1;
       break;
     }
-    case '[': {
-      (*s)++;
-      tokbuf[tokbufpos++] = mpack_pack_array(item_count(*s));
-      while (**s != ']') {
-        parse_json(s);
-      }
-      (*s)++;
+    case '[':
+      p++;
+      node->tok = mpack_pack_array(item_count(p));
       break;
-    }
-    case '{': {
-      (*s)++;
-      tokbuf[tokbufpos++] = mpack_pack_map(item_count(*s));
-      while (**s != '}') {
-        parse_json(s);
-        (*s)++;
-        parse_json(s);
-      }
-      (*s)++;
+    case '{':
+      p++;
+      node->tok = mpack_pack_map(item_count(p) * 2);
       break;
-    }
   }
-} 
+
+end:
+  node->data = p;
+  if (parent) parent->data = p;
+}
+
+static void unparse_end(mpack_node_t *node, mpack_node_t *parent)
+{
+  char *p = node->data;
+
+  switch (node->tok.type) {
+    case MPACK_TOKEN_BIN:
+    case MPACK_TOKEN_STR:
+    case MPACK_TOKEN_EXT:
+    case MPACK_TOKEN_ARRAY:
+    case MPACK_TOKEN_MAP: p++;
+    default: break;
+  }
+
+  node->data = p;
+  if (parent) parent->data = p;
+}
 
 static void parse_begin(mpack_node_t *node, mpack_node_t *parent)
 {
@@ -253,12 +262,12 @@ static void fixture_test(int fixture_idx)
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     mpack_parser_t parser;
+    mpack_unparser_t unparser;
     size_t cs = chunksizes[i];
     /* unpack test */
-    done = false;
     bufpos = 0;
-    mpack_parser_init(&parser);
     mpack_node_t *node, *parent;
+    mpack_parser_init(&parser);
     char *b = (char *)fmsgpack;
     size_t bl = cs;
 
@@ -275,15 +284,16 @@ static void fixture_test(int fixture_idx)
         "unpack '%s' in steps of %zu", repr, cs);
 
     /* pack test */
+    mpack_unparser_init(&unparser);
     char *fj = fjson;
-    size_t pos = 0;
-    tokbufpos = 0;
-    parse_json(&fj);
-    mpack_writer_init(&writer);
     b = buf;
     bl = MIN(cs, sizeof(buf));
-    while (pos < tokbufpos) {
-      if (mpack_write(&writer, &b, &bl, tokbuf + pos) == MPACK_OK) pos++;
+    for (;;) {
+      int status = mpack_unparse(&unparser, &b, &bl, &node, &parent);
+      if (b == buf) node->data = fj;
+      if (status == MPACK_OK) break;
+      else if (status == MPACK_NODE_ENTER) unparse_begin(node, parent);
+      else if (status == MPACK_NODE_EXIT) unparse_end(node, parent);
       if (!bl) bl = cs;
     }
 
@@ -295,11 +305,13 @@ static void fixture_test(int fixture_idx)
 
 static void signed_positive_packs_with_unsigned_format(void)
 {
+  mpack_token_t tokbuf[0xff];
+  size_t tokbufpos = 0;
   char mpackbuf[256];
   char *buf = mpackbuf;
   size_t buflen = sizeof(mpackbuf);
+  mpack_writer_t writer;
   mpack_writer_init(&writer);
-  tokbufpos = 0;
   tokbuf[tokbufpos++] = mpack_pack_sint(0);
   tokbuf[tokbufpos++] = mpack_pack_sint(1);
   tokbuf[tokbufpos++] = mpack_pack_sint(0x7f);

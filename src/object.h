@@ -34,4 +34,12 @@ void mpack_parser_init(mpack_parser_t *p);
 int mpack_parse(mpack_parser_t *p, const char **b, size_t *bl,
     mpack_node_t **node, mpack_node_t **parent);
 
+typedef struct mpack_unparser_s {
+  mpack_writer_t writer;
+  mpack_walker_t walker;
+} mpack_unparser_t;
+
+void mpack_unparser_init(mpack_unparser_t *u);
+int mpack_unparse(mpack_unparser_t *u, char **b, size_t *bl,
+    mpack_node_t **node, mpack_node_t **parent);
 #endif  /* MPACK_OBJECT_H */
