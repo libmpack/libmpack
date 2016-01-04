@@ -55,8 +55,9 @@ static uint32_t item_count(const char *s)
   return count;
 }
 
-static void unparse_begin(mpack_node_t *node, mpack_node_t *parent)
+static void unparse_begin(mpack_node_t *node)
 {
+  mpack_node_t *parent = MPACK_PARENT_NODE(node);
   char *p = parent ? parent->data : node->data;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
@@ -154,8 +155,9 @@ end:
   if (parent) parent->data = p;
 }
 
-static void unparse_end(mpack_node_t *node, mpack_node_t *parent)
+static void unparse_end(mpack_node_t *node)
 {
+  mpack_node_t *parent = MPACK_PARENT_NODE(node);
   char *p = node->data;
 
   switch (node->tok.type) {
@@ -171,8 +173,9 @@ static void unparse_end(mpack_node_t *node, mpack_node_t *parent)
   if (parent) parent->data = p;
 }
 
-static void parse_begin(mpack_node_t *node, mpack_node_t *parent)
+static void parse_begin(mpack_node_t *node)
 {
+  mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
 
@@ -218,8 +221,9 @@ static void parse_begin(mpack_node_t *node, mpack_node_t *parent)
   }
 }
 
-static void parse_end(mpack_node_t *node, mpack_node_t *parent)
+static void parse_end(mpack_node_t *node)
 {
+  mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
 
@@ -266,16 +270,16 @@ static void fixture_test(int fixture_idx)
     size_t cs = chunksizes[i];
     /* unpack test */
     bufpos = 0;
-    mpack_node_t *node, *parent;
     mpack_parser_init(&parser);
+    mpack_node_t *node;
     char *b = (char *)fmsgpack;
     size_t bl = cs;
 
     for (;;) {
-      int status = mpack_parse(&parser, (const char **)&b, &bl, &node, &parent);
+      int status = mpack_parse(&parser, (const char **)&b, &bl, &node);
       if (status == MPACK_OK) break;
-      else if (status == MPACK_NODE_ENTER) parse_begin(node, parent);
-      else if (status == MPACK_NODE_EXIT) parse_end(node, parent);
+      else if (status == MPACK_NODE_ENTER) parse_begin(node);
+      else if (status == MPACK_NODE_EXIT) parse_end(node);
       if (!bl) bl = cs;
     }
 
@@ -289,11 +293,11 @@ static void fixture_test(int fixture_idx)
     b = buf;
     bl = MIN(cs, sizeof(buf));
     for (;;) {
-      int status = mpack_unparse(&unparser, &b, &bl, &node, &parent);
+      int status = mpack_unparse(&unparser, &b, &bl, &node);
       if (b == buf) node->data = fj;
       if (status == MPACK_OK) break;
-      else if (status == MPACK_NODE_ENTER) unparse_begin(node, parent);
-      else if (status == MPACK_NODE_EXIT) unparse_end(node, parent);
+      else if (status == MPACK_NODE_ENTER) unparse_begin(node);
+      else if (status == MPACK_NODE_EXIT) unparse_end(node);
       if (!bl) bl = cs;
     }
 
@@ -403,24 +407,24 @@ static void unpacking_c1_returns_eread(void)
   mpack_reader_init(&reader);
   mpack_parser_t parser;
   mpack_parser_init(&parser);
-  mpack_node_t *node, *parent;
+  mpack_node_t *node;
   int res = mpack_read(&reader, &inp, &inplen, &tok),
-      res2 = mpack_parse(&parser, &inp, &inplen, &node, &parent);
+      res2 = mpack_parse(&parser, &inp, &inplen, &node);
   ok(res == MPACK_ERROR && res2 == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
 static void very_deep_objects_returns_enomem(void)
 {
   mpack_parser_t parser;
-  mpack_node_t *node, *parent;
+  mpack_node_t *node;
   mpack_parser_init(&parser);
   parser.walker.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  ok(mpack_parse(&parser, &inp, &inplen, &node, &parent) == MPACK_NODE_ENTER
-  && mpack_parse(&parser, &inp, &inplen, &node, &parent) == MPACK_NODE_ENTER
-  && mpack_parse(&parser, &inp, &inplen, &node, &parent) == MPACK_NOMEM
+  ok(mpack_parse(&parser, &inp, &inplen, &node) == MPACK_NODE_ENTER
+  && mpack_parse(&parser, &inp, &inplen, &node) == MPACK_NODE_ENTER
+  && mpack_parse(&parser, &inp, &inplen, &node) == MPACK_NOMEM
   && inplen == 1 && inp == (const char *)input + 2,
   "very deep objects return MPACK_ENOMEM");
 }
