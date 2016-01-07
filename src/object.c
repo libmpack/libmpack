@@ -1,9 +1,53 @@
 #include "object.h"
 
+enum {
+  WALK_STATE_ENTER = 1,
+  WALK_STATE_EXIT,
+  WALK_STATE_VISIT
+};
+
 static void mpack_walker_init(mpack_walker_t *w);
 static int mpack_walker_full(mpack_walker_t *w);
 static mpack_node_t *mpack_walker_push(mpack_walker_t *w);
 static mpack_node_t *mpack_walker_pop(mpack_walker_t *w);
+
+#define WALK(walker, visit, target, visit_on_enter)                        \
+  do {                                                                     \
+    if (!(walker)->state) {                                                \
+      (walker)->state = WALK_STATE_ENTER;                                  \
+      return MPACK_OK;                                                     \
+    }                                                                      \
+                                                                           \
+    for (;;) {                                                             \
+      if ((walker)->state == WALK_STATE_ENTER) {                           \
+                                                                           \
+        if (mpack_walker_full(walker)) return MPACK_NOMEM;                 \
+        *node = mpack_walker_push(walker);                                 \
+        if (visit_on_enter) {                                              \
+          int fail = visit(target, buf, buflen, &(*node)->tok);            \
+          if (fail) { (walker)->size--; return fail; }                     \
+          (walker)->state = WALK_STATE_EXIT;                               \
+        } else {                                                           \
+          (walker)->state = WALK_STATE_VISIT;                              \
+        }                                                                  \
+        return MPACK_NODE_ENTER;                                           \
+      } else if (!visit_on_enter && (walker)->state == WALK_STATE_VISIT) { \
+        int fail = visit(target, buf, buflen, &(*node)->tok);              \
+        if (fail) return fail;                                             \
+        (walker)->state = WALK_STATE_EXIT;                                 \
+      } else {                                                             \
+        assert((walker)->state == WALK_STATE_EXIT);                        \
+        *node = mpack_walker_pop(walker);                                  \
+                                                                           \
+        if (*node) {                                                       \
+          if (!(walker)->size) (walker)->state = 0;                        \
+          return MPACK_NODE_EXIT;                                          \
+        } else {                                                           \
+          (walker)->state = WALK_STATE_ENTER;                              \
+        }                                                                  \
+      }                                                                    \
+    }                                                                      \
+  } while (0)
 
 void mpack_parser_init(mpack_parser_t *parser)
 {
@@ -14,37 +58,7 @@ void mpack_parser_init(mpack_parser_t *parser)
 int mpack_parse(mpack_parser_t *parser, const char **buf, size_t *buflen,
     mpack_node_t **node)
 {
-  if (parser->walker.state == MPACK_OK) {
-    parser->walker.state = MPACK_NODE_ENTER;
-    return MPACK_OK;
-  }
-
-  for (;;) {
-    if (parser->walker.state == MPACK_NODE_ENTER) {
-      int fail;
-
-      if (mpack_walker_full(&parser->walker)) return MPACK_NOMEM;
-      *node = mpack_walker_push(&parser->walker);
-
-      if ((fail = mpack_read(&parser->reader, buf, buflen, &(*node)->tok))) {
-        parser->walker.size--;
-        return fail;
-      }
-
-      parser->walker.state = MPACK_NODE_EXIT;
-      return MPACK_NODE_ENTER;
-    } else {
-      assert(parser->walker.state == MPACK_NODE_EXIT);
-      *node = mpack_walker_pop(&parser->walker);
-
-      if (*node) {
-        if (!parser->walker.size) parser->walker.state = MPACK_OK;
-        return MPACK_NODE_EXIT;
-      } else {
-        parser->walker.state = MPACK_NODE_ENTER;
-      }
-    }
-  }
+  WALK(&parser->walker, mpack_read, &parser->reader, 1);
 }
 
 void mpack_unparser_init(mpack_unparser_t *unparser)
@@ -56,43 +70,12 @@ void mpack_unparser_init(mpack_unparser_t *unparser)
 int mpack_unparse(mpack_unparser_t *unparser, char **buf, size_t *buflen,
     mpack_node_t **node)
 {
-  if (unparser->walker.state == MPACK_OK) {
-    unparser->walker.state = MPACK_NODE_ENTER;
-    return MPACK_OK;
-  }
-
-  while (*buflen) {
-    if (unparser->walker.state == MPACK_NODE_ENTER) {
-
-      if (mpack_walker_full(&unparser->walker)) return MPACK_NOMEM;
-      *node = mpack_walker_push(&unparser->walker);
-      unparser->walker.state = -1;
-
-      return MPACK_NODE_ENTER;
-    } else if (unparser->walker.state == -1) {
-      int fail;
-      if ((fail = mpack_write(&unparser->writer, buf, buflen, &(*node)->tok)))
-        return fail;
-      unparser->walker.state = MPACK_NODE_EXIT;
-    } else {
-      assert(unparser->walker.state == MPACK_NODE_EXIT);
-      *node = mpack_walker_pop(&unparser->walker);
-
-      if (*node) {
-        if (!unparser->walker.size) unparser->walker.state = MPACK_OK;
-        return MPACK_NODE_EXIT;
-      } else {
-        unparser->walker.state = MPACK_NODE_ENTER;
-      }
-    }
-  }
-
-  return MPACK_EOF;
+  WALK(&unparser->walker, mpack_write, &unparser->writer, 0);
 }
 
 static void mpack_walker_init(mpack_walker_t *walker)
 {
-  walker->state = MPACK_NODE_ENTER;
+  walker->state = WALK_STATE_ENTER;
   walker->capacity = MPACK_MAX_OBJECT_DEPTH;
   walker->size = 0;
   walker->items[0].pos = (size_t)-1;
