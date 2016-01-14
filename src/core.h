@@ -72,8 +72,8 @@ typedef struct mpack_reader_s {
 } mpack_reader_t;
 
 typedef struct mpack_writer_s {
-  const mpack_token_t *pending;
-  size_t pending_written;
+  char pending[MPACK_MAX_TOKEN_LEN];
+  size_t ppos, plen;
 } mpack_writer_t;
 
 MPACK_API void mpack_reader_init(mpack_reader_t *r);
