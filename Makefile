@@ -92,7 +92,7 @@ profile: tools $(PROFOUT)
 compile_commands.json:
 	rm -f $(BINDIR)/compile_commands.json
 	$(MAKE) config=$(config) clean
-	bear -- $(MAKE) config=$(config)
+	bear $(MAKE) config=$(config)
 	mv compile_commands.json $(BINDIR)
 
 $(COVOUT): $(SRC) $(TSRC)
