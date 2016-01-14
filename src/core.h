@@ -1,6 +1,10 @@
 #ifndef MPACK_CORE_H
 #define MPACK_CORE_H
 
+#ifndef MPACK_API
+# define MPACK_API extern
+#endif
+
 #include <assert.h>
 #include <limits.h>
 #include <stddef.h>
@@ -72,11 +76,11 @@ typedef struct mpack_writer_s {
   size_t pending_written;
 } mpack_writer_t;
 
-void mpack_reader_init(mpack_reader_t *r);
-void mpack_writer_init(mpack_writer_t *w);
-int mpack_read(mpack_reader_t *r, const char **b, size_t *bl,
+MPACK_API void mpack_reader_init(mpack_reader_t *r);
+MPACK_API void mpack_writer_init(mpack_writer_t *w);
+MPACK_API int mpack_read(mpack_reader_t *r, const char **b, size_t *bl,
     mpack_token_t *tok);
-int mpack_write(mpack_writer_t *w, char **b, size_t *bl,
+MPACK_API int mpack_write(mpack_writer_t *w, char **b, size_t *bl,
     const mpack_token_t *tok);
 
 #endif  /* MPACK_CORE_H */

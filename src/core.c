@@ -9,47 +9,48 @@
 # define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #endif
 
-static int mpack_read_pending(const char **b, size_t *nl, mpack_reader_t *r);
-static int mpack_read_token(const char **buf, size_t *buflen,
+static int mpack_rtoken(const char **buf, size_t *buflen,
     mpack_token_t *tok);
-static int value(mpack_token_type_t t, mpack_uint32_t l,
-    mpack_value_t v, mpack_token_t *tok);
-static int blob(mpack_token_type_t t, mpack_uint32_t l, int et,
-    mpack_token_t *tok);
-static int read_value(mpack_token_type_t t, mpack_uint32_t l,
+static int mpack_rpending(const char **b, size_t *nl, mpack_reader_t *r);
+static int mpack_rvalue(mpack_token_type_t t, mpack_uint32_t l,
     const char **b, size_t *bl, mpack_token_t *tok);
-static int read_blob(mpack_token_type_t t, mpack_uint32_t l,
+static int mpack_rblob(mpack_token_type_t t, mpack_uint32_t l,
     const char **b, size_t *bl, mpack_token_t *tok);
-static int mpack_write_token(const mpack_token_t *tok, char **b, size_t *bl);
-static int mpack_write_pending(char **b, size_t *bl, const mpack_token_t *tok,
+static int mpack_wtoken(const mpack_token_t *tok, char **b, size_t *bl);
+static int mpack_wpending(char **b, size_t *bl, const mpack_token_t *tok,
     mpack_writer_t *w);
-static int write1(char **b, size_t *bl, mpack_uint32_t v);
-static int write2(char **b, size_t *bl, mpack_uint32_t v);
-static int write4(char **b, size_t *bl, mpack_uint32_t v);
-static int write_pint(char **b, size_t *bl, mpack_value_t v);
-static int write_nint(char **b, size_t *bl, mpack_value_t v);
-static int write_float(char **b, size_t *bl, const mpack_token_t *v);
-static int write_str(char **buf, size_t *buflen, mpack_uint32_t len);
-static int write_bin(char **buf, size_t *buflen, mpack_uint32_t len);
-static int write_ext(char **buf, size_t *buflen, int type, mpack_uint32_t len);
-static int write_array(char **buf, size_t *buflen, mpack_uint32_t len);
-static int write_map(char **buf, size_t *buflen, mpack_uint32_t len);
-static mpack_value_t byte(unsigned char b);
+static int mpack_wpint(char **b, size_t *bl, mpack_value_t v);
+static int mpack_wnint(char **b, size_t *bl, mpack_value_t v);
+static int mpack_wfloat(char **b, size_t *bl, const mpack_token_t *v);
+static int mpack_wstr(char **buf, size_t *buflen, mpack_uint32_t len);
+static int mpack_wbin(char **buf, size_t *buflen, mpack_uint32_t len);
+static int mpack_wext(char **buf, size_t *buflen, int type,
+    mpack_uint32_t len);
+static int mpack_warray(char **buf, size_t *buflen, mpack_uint32_t len);
+static int mpack_wmap(char **buf, size_t *buflen, mpack_uint32_t len);
+static int mpack_w1(char **b, size_t *bl, mpack_uint32_t v);
+static int mpack_w2(char **b, size_t *bl, mpack_uint32_t v);
+static int mpack_w4(char **b, size_t *bl, mpack_uint32_t v);
+static mpack_value_t mpack_byte(unsigned char b);
+static int mpack_value(mpack_token_type_t t, mpack_uint32_t l,
+    mpack_value_t v, mpack_token_t *tok);
+static int mpack_blob(mpack_token_type_t t, mpack_uint32_t l, int et,
+    mpack_token_t *tok);
 
-void mpack_reader_init(mpack_reader_t *reader)
+MPACK_API void mpack_reader_init(mpack_reader_t *reader)
 {
   reader->ppos = 0;
   reader->plen = 0;
   reader->passthrough = 0;
 }
 
-void mpack_writer_init(mpack_writer_t *writer)
+MPACK_API void mpack_writer_init(mpack_writer_t *writer)
 {
   writer->pending = NULL;
 }
 
-int mpack_read(mpack_reader_t *reader, const char **buf, size_t *buflen,
-    mpack_token_t *tok)
+MPACK_API int mpack_read(mpack_reader_t *reader, const char **buf,
+    size_t *buflen, mpack_token_t *tok)
 {
   int status;
   size_t initial_ppos, ptrlen, advanced;
@@ -71,7 +72,7 @@ int mpack_read(mpack_reader_t *reader, const char **buf, size_t *buflen,
   initial_ppos = reader->ppos;
 
   if (reader->plen) {
-    if (!mpack_read_pending(buf, buflen, reader)) {
+    if (!mpack_rpending(buf, buflen, reader)) {
       return MPACK_EOF;
     }
     ptr = reader->pending;
@@ -83,7 +84,7 @@ int mpack_read(mpack_reader_t *reader, const char **buf, size_t *buflen,
 
   ptr_save = ptr;
 
-  if ((status = mpack_read_token(&ptr, &ptrlen, tok))) {
+  if ((status = mpack_rtoken(&ptr, &ptrlen, tok))) {
     if (status != MPACK_EOF) return MPACK_ERROR;
     /* need more data */
     assert(!reader->plen);
@@ -93,7 +94,7 @@ int mpack_read(mpack_reader_t *reader, const char **buf, size_t *buflen,
     reader->plen = tok->length + 1;
     assert(reader->plen <= sizeof(reader->pending));
     reader->ppos = 0;
-    status = mpack_read_pending(buf, buflen, reader);
+    status = mpack_rpending(buf, buflen, reader);
     assert(!status);
     return MPACK_EOF;
   }
@@ -111,7 +112,7 @@ done:
   return MPACK_OK;
 }
 
-int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
+MPACK_API int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
     const mpack_token_t *tok)
 {
   int status;
@@ -120,7 +121,7 @@ int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
   assert(*buf && *buflen);
 
   if (writer->pending) {
-    if (mpack_write_pending(buf, buflen, tok, writer)) {
+    if (mpack_wpending(buf, buflen, tok, writer)) {
       writer->pending = NULL;
       return MPACK_OK;
     } else {
@@ -132,13 +133,13 @@ int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
   ptr = *buf;
   ptrlen = *buflen;
 
-  if ((status = mpack_write_token(tok, &ptr, &ptrlen))) {
+  if ((status = mpack_wtoken(tok, &ptr, &ptrlen))) {
     if (status != MPACK_EOF) return status;
     /* not enough space in *buf, write whatever we can and mark
      * the token as pending to be finished in a future call */
     writer->pending_written = 0;
     writer->pending = tok;
-    status = mpack_write_pending(buf, buflen, tok, writer);
+    status = mpack_wpending(buf, buflen, tok, writer);
     assert(!status && *buflen == 0);
     return MPACK_EOF;
   }
@@ -148,68 +149,51 @@ int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
   return MPACK_OK;
 }
 
-static int mpack_read_pending(const char **buf, size_t *buflen,
-    mpack_reader_t *reader)
-{
-  size_t count;
-  assert(reader->ppos < reader->plen);
-  count = MIN(reader->plen - reader->ppos, *buflen);
-  memcpy(reader->pending + reader->ppos, *buf, count);
-  reader->ppos += count;
-  if (reader->ppos < reader->plen) {
-    /* consume buffer since no token will be parsed yet. */
-    *buf += *buflen;
-    *buflen = 0;
-    return 0;
-  }
-  return 1;
-}
-
-static int mpack_read_token(const char **buf, size_t *buflen,
+static int mpack_rtoken(const char **buf, size_t *buflen,
     mpack_token_t *tok)
 {
   unsigned char t = ADVANCE(buf, buflen);
   if (t < 0x80) {
     /* positive fixint */
-    return value(MPACK_TOKEN_UINT, 1, byte(t), tok);
+    return mpack_value(MPACK_TOKEN_UINT, 1, mpack_byte(t), tok);
   } else if (t < 0x90) {
     /* fixmap */
-    return blob(MPACK_TOKEN_MAP, (t & 0xf) * (unsigned)2, 0, tok);
+    return mpack_blob(MPACK_TOKEN_MAP, (t & 0xf) * (unsigned)2, 0, tok);
   } else if (t < 0xa0) {
     /* fixarray */
-    return blob(MPACK_TOKEN_ARRAY, t & 0xf, 0, tok);
+    return mpack_blob(MPACK_TOKEN_ARRAY, t & 0xf, 0, tok);
   } else if (t < 0xc0) {
     /* fixstr */
-    return blob(MPACK_TOKEN_STR, t & 0x1f, 0, tok);
+    return mpack_blob(MPACK_TOKEN_STR, t & 0x1f, 0, tok);
   } else if (t < 0xe0) {
     switch (t) {
       case 0xc0:  /* nil */
-        return value(MPACK_TOKEN_NIL, 0, byte(0), tok);
+        return mpack_value(MPACK_TOKEN_NIL, 0, mpack_byte(0), tok);
       case 0xc2:  /* false */
-        return value(MPACK_TOKEN_BOOLEAN, 1, byte(0), tok);
+        return mpack_value(MPACK_TOKEN_BOOLEAN, 1, mpack_byte(0), tok);
       case 0xc3:  /* true */
-        return value(MPACK_TOKEN_BOOLEAN, 1, byte(1), tok);
+        return mpack_value(MPACK_TOKEN_BOOLEAN, 1, mpack_byte(1), tok);
       case 0xc4:  /* bin 8 */
       case 0xc5:  /* bin 16 */
       case 0xc6:  /* bin 32 */
-        return read_blob(MPACK_TOKEN_BIN, TLEN(t, 0xc4), buf, buflen, tok);
+        return mpack_rblob(MPACK_TOKEN_BIN, TLEN(t, 0xc4), buf, buflen, tok);
       case 0xc7:  /* ext 8 */
       case 0xc8:  /* ext 16 */
       case 0xc9:  /* ext 32 */
-        return read_blob(MPACK_TOKEN_EXT, TLEN(t, 0xc7), buf, buflen, tok);
+        return mpack_rblob(MPACK_TOKEN_EXT, TLEN(t, 0xc7), buf, buflen, tok);
       case 0xca:  /* float 32 */
       case 0xcb:  /* float 64 */
-        return read_value(MPACK_TOKEN_FLOAT, TLEN(t, 0xc8), buf, buflen, tok);
+        return mpack_rvalue(MPACK_TOKEN_FLOAT, TLEN(t, 0xc8), buf, buflen, tok);
       case 0xcc:  /* uint 8 */
       case 0xcd:  /* uint 16 */
       case 0xce:  /* uint 32 */
       case 0xcf:  /* uint 64 */
-        return read_value(MPACK_TOKEN_UINT, TLEN(t, 0xcc), buf, buflen, tok);
+        return mpack_rvalue(MPACK_TOKEN_UINT, TLEN(t, 0xcc), buf, buflen, tok);
       case 0xd0:  /* int 8 */
       case 0xd1:  /* int 16 */
       case 0xd2:  /* int 32 */
       case 0xd3:  /* int 64 */
-        return read_value(MPACK_TOKEN_SINT, TLEN(t, 0xd0), buf, buflen, tok);
+        return mpack_rvalue(MPACK_TOKEN_SINT, TLEN(t, 0xd0), buf, buflen, tok);
       case 0xd4:  /* fixext 1 */
       case 0xd5:  /* fixext 2 */
       case 0xd6:  /* fixext 4 */
@@ -227,41 +211,40 @@ static int mpack_read_token(const char **buf, size_t *buflen,
       case 0xd9:  /* str 8 */
       case 0xda:  /* str 16 */
       case 0xdb:  /* str 32 */
-        return read_blob(MPACK_TOKEN_STR, TLEN(t, 0xd9), buf, buflen, tok);
+        return mpack_rblob(MPACK_TOKEN_STR, TLEN(t, 0xd9), buf, buflen, tok);
       case 0xdc:  /* array 16 */
       case 0xdd:  /* array 32 */
-        return read_blob(MPACK_TOKEN_ARRAY, TLEN(t, 0xdb), buf, buflen, tok);
+        return mpack_rblob(MPACK_TOKEN_ARRAY, TLEN(t, 0xdb), buf, buflen, tok);
       case 0xde:  /* map 16 */
       case 0xdf:  /* map 32 */
-        return read_blob(MPACK_TOKEN_MAP, TLEN(t, 0xdd), buf, buflen, tok);
+        return mpack_rblob(MPACK_TOKEN_MAP, TLEN(t, 0xdd), buf, buflen, tok);
       default:
         return MPACK_ERROR;
     }
   } else {
     /* negative fixint */
-    return value(MPACK_TOKEN_SINT, 1, byte(t), tok);
+    return mpack_value(MPACK_TOKEN_SINT, 1, mpack_byte(t), tok);
   }
 }
 
-static int value(mpack_token_type_t type, mpack_uint32_t length,
-    mpack_value_t value, mpack_token_t *tok)
+static int mpack_rpending(const char **buf, size_t *buflen,
+    mpack_reader_t *reader)
 {
-  tok->type = type;
-  tok->length = length;
-  tok->data.value = value;
-  return MPACK_OK;
+  size_t count;
+  assert(reader->ppos < reader->plen);
+  count = MIN(reader->plen - reader->ppos, *buflen);
+  memcpy(reader->pending + reader->ppos, *buf, count);
+  reader->ppos += count;
+  if (reader->ppos < reader->plen) {
+    /* consume buffer since no token will be parsed yet. */
+    *buf += *buflen;
+    *buflen = 0;
+    return 0;
+  }
+  return 1;
 }
 
-static int blob(mpack_token_type_t type, mpack_uint32_t length,
-    int ext_type, mpack_token_t *tok)
-{
-  tok->type = type;
-  tok->length = length;
-  tok->data.ext_type = ext_type;
-  return MPACK_OK;
-}
-
-static int read_value(mpack_token_type_t type, mpack_uint32_t remaining,
+static int mpack_rvalue(mpack_token_type_t type, mpack_uint32_t remaining,
     const char **buf, size_t *buflen, mpack_token_t *tok)
 {
   if (*buflen < remaining) {
@@ -269,7 +252,7 @@ static int read_value(mpack_token_type_t type, mpack_uint32_t remaining,
     return MPACK_EOF;
   }
 
-  value(type, remaining, byte(0), tok);
+  mpack_value(type, remaining, mpack_byte(0), tok);
 
   while (remaining) {
     mpack_uint32_t byte = ADVANCE(buf, buflen), byte_idx, byte_shift;
@@ -299,7 +282,7 @@ static int read_value(mpack_token_type_t type, mpack_uint32_t remaining,
   return MPACK_OK;
 }
 
-static int read_blob(mpack_token_type_t type, mpack_uint32_t tlen,
+static int mpack_rblob(mpack_token_type_t type, mpack_uint32_t tlen,
     const char **buf, size_t *buflen, mpack_token_t *tok)
 {
   mpack_token_t l;
@@ -311,7 +294,7 @@ static int read_blob(mpack_token_type_t type, mpack_uint32_t tlen,
   }
 
   l.data.value.lo = 0;
-  read_value(MPACK_TOKEN_UINT, tlen, buf, buflen, &l);
+  mpack_rvalue(MPACK_TOKEN_UINT, tlen, buf, buflen, &l);
   tok->type = type;
   tok->length = l.data.value.lo;
 
@@ -324,30 +307,30 @@ static int read_blob(mpack_token_type_t type, mpack_uint32_t tlen,
   return MPACK_OK;
 }
 
-static int mpack_write_token(const mpack_token_t *tok, char **buf,
+static int mpack_wtoken(const mpack_token_t *tok, char **buf,
     size_t *buflen)
 {
   switch (tok->type) {
     case MPACK_TOKEN_NIL:
-      return write1(buf, buflen, 0xc0);
+      return mpack_w1(buf, buflen, 0xc0);
     case MPACK_TOKEN_BOOLEAN:
-      return write1(buf, buflen, tok->data.value.lo ? 0xc3 : 0xc2);
+      return mpack_w1(buf, buflen, tok->data.value.lo ? 0xc3 : 0xc2);
     case MPACK_TOKEN_UINT:
-      return write_pint(buf, buflen, tok->data.value);
+      return mpack_wpint(buf, buflen, tok->data.value);
     case MPACK_TOKEN_SINT:
-      return write_nint(buf, buflen, tok->data.value);
+      return mpack_wnint(buf, buflen, tok->data.value);
     case MPACK_TOKEN_FLOAT:
-      return write_float(buf, buflen, tok);
+      return mpack_wfloat(buf, buflen, tok);
     case MPACK_TOKEN_BIN:
-      return write_bin(buf, buflen, tok->length);
+      return mpack_wbin(buf, buflen, tok->length);
     case MPACK_TOKEN_STR:
-      return write_str(buf, buflen, tok->length);
+      return mpack_wstr(buf, buflen, tok->length);
     case MPACK_TOKEN_EXT:
-      return write_ext(buf, buflen, tok->data.ext_type, tok->length);
+      return mpack_wext(buf, buflen, tok->data.ext_type, tok->length);
     case MPACK_TOKEN_ARRAY:
-      return write_array(buf, buflen, tok->length);
+      return mpack_warray(buf, buflen, tok->length);
     case MPACK_TOKEN_MAP:
-      return write_map(buf, buflen, tok->length / 2);
+      return mpack_wmap(buf, buflen, tok->length / 2);
     case MPACK_TOKEN_CHUNK:
       if (*buflen < tok->length) {
         return MPACK_EOF;
@@ -361,7 +344,7 @@ static int mpack_write_token(const mpack_token_t *tok, char **buf,
   }
 }
 
-static int mpack_write_pending(char **buf, size_t *buflen,
+static int mpack_wpending(char **buf, size_t *buflen,
     const mpack_token_t *tok, mpack_writer_t *writer)
 {
   int rv;
@@ -374,7 +357,7 @@ static int mpack_write_pending(char **buf, size_t *buflen,
     pending_len = tok->length - writer->pending_written;
     ptr = (char *)tok->data.chunk_ptr;
   } else {
-    int status = mpack_write_token(tok, &ptr, &ptrlen);
+    int status = mpack_wtoken(tok, &ptr, &ptrlen);
     UNUSED(status);
     assert(status == MPACK_OK);
     tmplen = sizeof(tmp) - ptrlen;
@@ -391,160 +374,162 @@ static int mpack_write_pending(char **buf, size_t *buflen,
   return rv;
 }
 
-static int write_pint(char **buf, size_t *buflen, mpack_value_t val)
+static int mpack_wpint(char **buf, size_t *buflen, mpack_value_t val)
 {
   mpack_uint32_t hi = val.hi;
   mpack_uint32_t lo = val.lo;
 
   if (hi) {
     /* uint 64 */
-    return write1(buf, buflen, 0xcf) ||
-           write4(buf, buflen, hi)   ||
-           write4(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xcf) ||
+           mpack_w4(buf, buflen, hi)   ||
+           mpack_w4(buf, buflen, lo);
   } else if (lo > 0xffff) {
     /* uint 32 */
-    return write1(buf, buflen, 0xce) ||
-           write4(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xce) ||
+           mpack_w4(buf, buflen, lo);
   } else if (lo > 0xff) {
     /* uint 16 */
-    return write1(buf, buflen, 0xcd) ||
-           write2(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xcd) ||
+           mpack_w2(buf, buflen, lo);
   } else if (lo > 0x7f) {
     /* uint 8 */
-    return write1(buf, buflen, 0xcc) ||
-           write1(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xcc) ||
+           mpack_w1(buf, buflen, lo);
   } else {
-    return write1(buf, buflen, lo);
+    return mpack_w1(buf, buflen, lo);
   }
 }
 
-static int write_nint(char **buf, size_t *buflen, mpack_value_t val)
+static int mpack_wnint(char **buf, size_t *buflen, mpack_value_t val)
 {
   mpack_uint32_t hi = val.hi;
   mpack_uint32_t lo = val.lo;
 
   if (lo < 0x80000000) {
     /* int 64 */
-    return write1(buf, buflen, 0xd3) ||
-           write4(buf, buflen, hi)   ||
-           write4(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xd3) ||
+           mpack_w4(buf, buflen, hi)   ||
+           mpack_w4(buf, buflen, lo);
   } else if (lo < 0xffff7fff) {
     /* int 32 */
-    return write1(buf, buflen, 0xd2) ||
-           write4(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xd2) ||
+           mpack_w4(buf, buflen, lo);
   } else if (lo < 0xffffff7f) {
     /* int 16 */
-    return write1(buf, buflen, 0xd1) ||
-           write2(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xd1) ||
+           mpack_w2(buf, buflen, lo);
   } else if (lo < 0xffffffe0) {
     /* int 8 */
-    return write1(buf, buflen, 0xd0) ||
-           write1(buf, buflen, lo);
+    return mpack_w1(buf, buflen, 0xd0) ||
+           mpack_w1(buf, buflen, lo);
   } else {
     /* negative fixint */
-    return write1(buf, buflen, (mpack_uint32_t)(0x100 + lo));
+    return mpack_w1(buf, buflen, (mpack_uint32_t)(0x100 + lo));
   }
 }
 
-static int write_float(char **buf, size_t *buflen, const mpack_token_t *tok)
+static int mpack_wfloat(char **buf, size_t *buflen,
+    const mpack_token_t *tok)
 {
   if (tok->length == 4) {
-    return write1(buf, buflen, 0xca) ||
-           write4(buf, buflen, tok->data.value.lo);
+    return mpack_w1(buf, buflen, 0xca) ||
+           mpack_w4(buf, buflen, tok->data.value.lo);
   } else if (tok->length == 8) {
-    return write1(buf, buflen, 0xcb) ||
-           write4(buf, buflen, tok->data.value.hi) ||
-           write4(buf, buflen, tok->data.value.lo);
+    return mpack_w1(buf, buflen, 0xcb) ||
+           mpack_w4(buf, buflen, tok->data.value.hi) ||
+           mpack_w4(buf, buflen, tok->data.value.lo);
   } else {
     return MPACK_ERROR;
   }
 }
 
-static int write_str(char **buf, size_t *buflen, mpack_uint32_t len)
+static int mpack_wstr(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x20) {
-    return write1(buf, buflen, 0xa0 | len);
+    return mpack_w1(buf, buflen, 0xa0 | len);
   } else if (len < 0x100) {
-    return write1(buf, buflen, 0xd9) ||
-           write1(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xd9) ||
+           mpack_w1(buf, buflen, len);
   } else if (len < 0x10000) {
-    return write1(buf, buflen, 0xda) ||
-           write2(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xda) ||
+           mpack_w2(buf, buflen, len);
   } else {
-    return write1(buf, buflen, 0xdb) ||
-           write4(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xdb) ||
+           mpack_w4(buf, buflen, len);
   }
 }
 
-static int write_bin(char **buf, size_t *buflen, mpack_uint32_t len)
+static int mpack_wbin(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x100) {
-    return write1(buf, buflen, 0xc4) ||
-           write1(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xc4) ||
+           mpack_w1(buf, buflen, len);
   } else if (len < 0x10000) {
-    return write1(buf, buflen, 0xc5) ||
-           write2(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xc5) ||
+           mpack_w2(buf, buflen, len);
   } else {
-    return write1(buf, buflen, 0xc6) ||
-           write4(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xc6) ||
+           mpack_w4(buf, buflen, len);
   }
 }
 
-static int write_ext(char **buf, size_t *buflen, int type, mpack_uint32_t len)
+static int mpack_wext(char **buf, size_t *buflen, int type,
+    mpack_uint32_t len)
 {
   mpack_uint32_t t;
   assert(type >= 0 && type < 0x80);
   t = (mpack_uint32_t)type;
   switch (len) {
-    case 1: write1(buf, buflen, 0xd4); return write1(buf, buflen, t);
-    case 2: write1(buf, buflen, 0xd5); return write1(buf, buflen, t);
-    case 4: write1(buf, buflen, 0xd6); return write1(buf, buflen, t);
-    case 8: write1(buf, buflen, 0xd7); return write1(buf, buflen, t);
-    case 16: write1(buf, buflen, 0xd8); return write1(buf, buflen, t);
+    case 1: mpack_w1(buf, buflen, 0xd4); return mpack_w1(buf, buflen, t);
+    case 2: mpack_w1(buf, buflen, 0xd5); return mpack_w1(buf, buflen, t);
+    case 4: mpack_w1(buf, buflen, 0xd6); return mpack_w1(buf, buflen, t);
+    case 8: mpack_w1(buf, buflen, 0xd7); return mpack_w1(buf, buflen, t);
+    case 16: mpack_w1(buf, buflen, 0xd8); return mpack_w1(buf, buflen, t);
     default:
       if (len < 0x100) {
-        return write1(buf, buflen, 0xc7) ||
-               write1(buf, buflen, len)  ||
-               write1(buf, buflen, t);
+        return mpack_w1(buf, buflen, 0xc7) ||
+               mpack_w1(buf, buflen, len)  ||
+               mpack_w1(buf, buflen, t);
       } else if (len < 0x10000) {
-        return write1(buf, buflen, 0xc8) ||
-               write2(buf, buflen, len)  ||
-               write1(buf, buflen, t);
+        return mpack_w1(buf, buflen, 0xc8) ||
+               mpack_w2(buf, buflen, len)  ||
+               mpack_w1(buf, buflen, t);
       } else {
-        return write1(buf, buflen, 0xc9) ||
-               write4(buf, buflen, len)  ||
-               write1(buf, buflen, t);
+        return mpack_w1(buf, buflen, 0xc9) ||
+               mpack_w4(buf, buflen, len)  ||
+               mpack_w1(buf, buflen, t);
       }
   }
 }
 
-static int write_array(char **buf, size_t *buflen, mpack_uint32_t len)
+static int mpack_warray(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x10) {
-    return write1(buf, buflen, 0x90 | len);
+    return mpack_w1(buf, buflen, 0x90 | len);
   } else if (len < 0x10000) {
-    return write1(buf, buflen, 0xdc) ||
-           write2(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xdc) ||
+           mpack_w2(buf, buflen, len);
   } else {
-    return write1(buf, buflen, 0xdd) ||
-           write4(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xdd) ||
+           mpack_w4(buf, buflen, len);
   }
 }
 
-static int write_map(char **buf, size_t *buflen, mpack_uint32_t len)
+static int mpack_wmap(char **buf, size_t *buflen, mpack_uint32_t len)
 {
   if (len < 0x10) {
-    return write1(buf, buflen, 0x80 | len);
+    return mpack_w1(buf, buflen, 0x80 | len);
   } else if (len < 0x10000) {
-    return write1(buf, buflen, 0xde) ||
-           write2(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xde) ||
+           mpack_w2(buf, buflen, len);
   } else {
-    return write1(buf, buflen, 0xdf) ||
-           write4(buf, buflen, len);
+    return mpack_w1(buf, buflen, 0xdf) ||
+           mpack_w4(buf, buflen, len);
   }
 }
 
-static int write1(char **b, size_t *bl, mpack_uint32_t v)
+static int mpack_w1(char **b, size_t *bl, mpack_uint32_t v)
 {
   if (!*bl) return MPACK_EOF;
   (*bl)--;
@@ -552,7 +537,7 @@ static int write1(char **b, size_t *bl, mpack_uint32_t v)
   return MPACK_OK;
 }
 
-static int write2(char **b, size_t *bl, mpack_uint32_t v)
+static int mpack_w2(char **b, size_t *bl, mpack_uint32_t v)
 {
   if (*bl < 2) return MPACK_EOF;
   *bl -= 2;
@@ -561,7 +546,7 @@ static int write2(char **b, size_t *bl, mpack_uint32_t v)
   return MPACK_OK;
 }
 
-static int write4(char **b, size_t *bl, mpack_uint32_t v)
+static int mpack_w4(char **b, size_t *bl, mpack_uint32_t v)
 {
   if (*bl < 4) return MPACK_EOF;
   *bl -= 4;
@@ -572,11 +557,28 @@ static int write4(char **b, size_t *bl, mpack_uint32_t v)
   return MPACK_OK;
 }
 
-static mpack_value_t byte(unsigned char byte)
+static int mpack_value(mpack_token_type_t type, mpack_uint32_t length,
+    mpack_value_t value, mpack_token_t *tok)
+{
+  tok->type = type;
+  tok->length = length;
+  tok->data.value = value;
+  return MPACK_OK;
+}
+
+static int mpack_blob(mpack_token_type_t type, mpack_uint32_t length,
+    int ext_type, mpack_token_t *tok)
+{
+  tok->type = type;
+  tok->length = length;
+  tok->data.ext_type = ext_type;
+  return MPACK_OK;
+}
+
+static mpack_value_t mpack_byte(unsigned char byte)
 {
   mpack_value_t rv;
   rv.lo = byte;
   rv.hi = 0;
   return rv;
 }
-

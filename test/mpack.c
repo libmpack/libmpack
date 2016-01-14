@@ -24,6 +24,7 @@
 #endif
 
 #ifdef TEST_AMALGAMATION
+# define MPACK_API static
 # include "../build/mpack.c"
 #else
 # include "../build/mpack.h"
@@ -31,10 +32,6 @@
 
 static char buf[0xffffff];
 static size_t bufpos;
-struct unparser_data {
-  mpack_unparser_t unparser;
-  char *p;
-};
 
 static void w(const char *fmt, ...)
 {
@@ -59,10 +56,10 @@ static uint32_t item_count(const char *s)
   return count;
 }
 
-static void unparse_enter(mpack_unparser_t *unparser, mpack_node_t *node)
+static void unparse_enter(mpack_walker_t *walker, mpack_node_t *node)
 {
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = parent ? parent->data : ((struct unparser_data *)unparser)->p;
+  char *p = parent ? parent->data : walker->data;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
     node->tok = mpack_pack_chunk(p, parent->tok.length);
@@ -159,9 +156,9 @@ end:
   if (parent) parent->data = p;
 }
 
-static void unparse_exit(mpack_unparser_t *unparser, mpack_node_t *node)
+static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(unparser);
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   char *p = node->data;
 
@@ -178,9 +175,9 @@ static void unparse_exit(mpack_unparser_t *unparser, mpack_node_t *node)
   if (parent) parent->data = p;
 }
 
-static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
+static void parse_enter(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(parser);
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -227,9 +224,9 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
   }
 }
 
-static void parse_exit(mpack_parser_t *parser, mpack_node_t *node)
+static void parse_exit(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(parser);
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -273,7 +270,7 @@ static void fixture_test(int fixture_idx)
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     mpack_parser_t parser;
-    struct unparser_data unparser;
+    mpack_unparser_t unparser;
     size_t cs = chunksizes[i];
     /* unpack test */
     bufpos = 0;
@@ -283,8 +280,8 @@ static void fixture_test(int fixture_idx)
     int status;
 
     do {
-      MPACK_PARSE(&parser, (const char **)&b, &bl, parse_enter, parse_exit,
-          status);
+      status = mpack_parse(&parser, (const char **)&b, &bl, parse_enter,
+          parse_exit);
       bl = cs;
     } while (status);
 
@@ -293,13 +290,12 @@ static void fixture_test(int fixture_idx)
         "unpack '%s' in steps of %zu", repr, cs);
 
     /* pack test */
-    mpack_unparser_init(&unparser.unparser);
-    unparser.p = fjson;
+    mpack_unparser_init(&unparser);
+    unparser.walker.data = fjson;
     b = buf;
     bl = MIN(cs, sizeof(buf));
     do {
-      MPACK_UNPARSE(&unparser.unparser, &b, &bl, unparse_enter, unparse_exit,
-          status);
+      status = mpack_unparse(&unparser, &b, &bl, unparse_enter, unparse_exit);
       bl = cs;
     } while (status);
 
@@ -409,24 +405,20 @@ static void unpacking_c1_returns_eread(void)
   mpack_reader_init(&reader);
   mpack_parser_t parser;
   mpack_parser_init(&parser);
-  mpack_node_t *node;
   int res = mpack_read(&reader, &inp, &inplen, &tok),
-      res2 = mpack_parse(&parser, &inp, &inplen, &node);
+      res2 = mpack_parse(&parser, &inp, &inplen, parse_enter, parse_exit);
   ok(res == MPACK_ERROR && res2 == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
 static void very_deep_objects_returns_enomem(void)
 {
   mpack_parser_t parser;
-  mpack_node_t *node;
   mpack_parser_init(&parser);
   parser.walker.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  ok(mpack_parse(&parser, &inp, &inplen, &node) == MPACK_NODE_ENTER
-  && mpack_parse(&parser, &inp, &inplen, &node) == MPACK_NODE_ENTER
-  && mpack_parse(&parser, &inp, &inplen, &node) == MPACK_NOMEM
+  ok(mpack_parse(&parser, &inp, &inplen, parse_enter, parse_exit) == MPACK_NOMEM
   && inplen == 1 && inp == (const char *)input + 2,
   "very deep objects return MPACK_ENOMEM");
 }

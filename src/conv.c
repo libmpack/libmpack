@@ -12,14 +12,14 @@
     val.hi = lo;                                               \
   } while (0)
 
-mpack_token_t mpack_pack_nil(void)
+MPACK_API mpack_token_t mpack_pack_nil(void)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_NIL;
   return rv;
 }
 
-mpack_token_t mpack_pack_boolean(unsigned v)
+MPACK_API mpack_token_t mpack_pack_boolean(unsigned v)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_BOOLEAN;
@@ -28,7 +28,7 @@ mpack_token_t mpack_pack_boolean(unsigned v)
   return rv;
 }
 
-mpack_token_t mpack_pack_uint(mpack_uintmax_t v)
+MPACK_API mpack_token_t mpack_pack_uint(mpack_uintmax_t v)
 {
   mpack_token_t rv;
   rv.data.value.lo = v & 0xffffffff;
@@ -37,7 +37,7 @@ mpack_token_t mpack_pack_uint(mpack_uintmax_t v)
   return rv;
 }
 
-mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
+MPACK_API mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
 {
   if (v < 0) {
     mpack_token_t rv;
@@ -51,7 +51,8 @@ mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
   return mpack_pack_uint((mpack_uintmax_t)v);
 }
 
-mpack_value_t pack_ieee754(double v, unsigned mantbits, unsigned expbits)
+MPACK_API mpack_value_t pack_ieee754(double v, unsigned mantbits,
+    unsigned expbits)
 {
   mpack_value_t rv = {0, 0};
   mpack_sint32_t exponent, bias = (1 << (expbits - 1)) - 1;
@@ -90,7 +91,7 @@ end:
   return rv;
 }
 
-int fits_single(double v)
+MPACK_API int fits_single(double v)
 {
   const double float_max_abs = 3.4028234663852886e+38;
   const double float_min_abs = 1.4012984643248171e-45;
@@ -98,7 +99,7 @@ int fits_single(double v)
   return vabs == 0 || (vabs >= float_min_abs && vabs <= float_max_abs);
 }
 
-mpack_token_t mpack_pack_float_compat(double v)
+MPACK_API mpack_token_t mpack_pack_float_compat(double v)
 {
   /* ieee754 single-precision limits to determine if "v" can be fully
    * represented in 4 bytes */
@@ -116,7 +117,7 @@ mpack_token_t mpack_pack_float_compat(double v)
   return rv;
 }
 
-mpack_token_t mpack_pack_float_fast(double v)
+MPACK_API mpack_token_t mpack_pack_float_fast(double v)
 {
   /* ieee754 single-precision limits to determine if "v" can be fully
    * represented in 4 bytes */
@@ -148,7 +149,7 @@ mpack_token_t mpack_pack_float_fast(double v)
   return rv;
 }
 
-mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
+MPACK_API mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_CHUNK;
@@ -157,7 +158,7 @@ mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
   return rv;
 }
 
-mpack_token_t mpack_pack_str(mpack_uint32_t l)
+MPACK_API mpack_token_t mpack_pack_str(mpack_uint32_t l)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_STR;
@@ -165,7 +166,7 @@ mpack_token_t mpack_pack_str(mpack_uint32_t l)
   return rv;
 }
 
-mpack_token_t mpack_pack_bin(mpack_uint32_t l)
+MPACK_API mpack_token_t mpack_pack_bin(mpack_uint32_t l)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_BIN;
@@ -173,7 +174,7 @@ mpack_token_t mpack_pack_bin(mpack_uint32_t l)
   return rv;
 }
 
-mpack_token_t mpack_pack_ext(int t, mpack_uint32_t l)
+MPACK_API mpack_token_t mpack_pack_ext(int t, mpack_uint32_t l)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_EXT;
@@ -182,7 +183,7 @@ mpack_token_t mpack_pack_ext(int t, mpack_uint32_t l)
   return rv;
 }
 
-mpack_token_t mpack_pack_array(mpack_uint32_t l)
+MPACK_API mpack_token_t mpack_pack_array(mpack_uint32_t l)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_ARRAY;
@@ -190,7 +191,7 @@ mpack_token_t mpack_pack_array(mpack_uint32_t l)
   return rv;
 }
 
-mpack_token_t mpack_pack_map(mpack_uint32_t l)
+MPACK_API mpack_token_t mpack_pack_map(mpack_uint32_t l)
 {
   mpack_token_t rv;
   rv.type = MPACK_TOKEN_MAP;
@@ -198,19 +199,19 @@ mpack_token_t mpack_pack_map(mpack_uint32_t l)
   return rv;
 }
 
-bool mpack_unpack_boolean(const mpack_token_t *t)
+MPACK_API bool mpack_unpack_boolean(const mpack_token_t *t)
 {
   return t->data.value.lo || t->data.value.hi;
 }
 
-mpack_uintmax_t mpack_unpack_uint(const mpack_token_t *t)
+MPACK_API mpack_uintmax_t mpack_unpack_uint(const mpack_token_t *t)
 {
   return (((mpack_uintmax_t)t->data.value.hi << 31) << 1) | t->data.value.lo;
 }
 
 /* unpack signed integer without relying on two's complement as internal
  * representation */
-mpack_sintmax_t mpack_unpack_sint(const mpack_token_t *t)
+MPACK_API mpack_sintmax_t mpack_unpack_sint(const mpack_token_t *t)
 {
   mpack_uint32_t hi = t->data.value.hi;
   mpack_uint32_t lo = t->data.value.lo;
@@ -229,7 +230,7 @@ mpack_sintmax_t mpack_unpack_sint(const mpack_token_t *t)
   return -((mpack_sintmax_t)(rv - 1)) - 1;
 }
 
-double mpack_unpack_float_compat(const mpack_token_t *t)
+MPACK_API double mpack_unpack_float_compat(const mpack_token_t *t)
 {
   mpack_uint32_t sign;
   mpack_sint32_t exponent, bias;
@@ -268,7 +269,7 @@ double mpack_unpack_float_compat(const mpack_token_t *t)
   return mant * (sign ? -1 : 1);
 }
 
-double mpack_unpack_float_fast(const mpack_token_t *t)
+MPACK_API double mpack_unpack_float_fast(const mpack_token_t *t)
 {
   if (t->length == 4) {
     union {
