@@ -10,8 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tap.h"
 #include "fixtures.h"
+#include "tap.h"
 
 #ifdef FORCE_32BIT_INTS
 #define UFORMAT PRIu32
@@ -269,12 +269,11 @@ static void fixture_test(int fixture_idx)
   char repr[32];
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
-    mpack_parser_t parser;
-    mpack_unparser_t unparser;
+    mpack_walker_t parser, unparser;
     size_t cs = chunksizes[i];
     /* unpack test */
     bufpos = 0;
-    mpack_parser_init(&parser);
+    mpack_walker_init(&parser);
     char *b = (char *)fmsgpack;
     size_t bl = cs;
     int status;
@@ -290,8 +289,8 @@ static void fixture_test(int fixture_idx)
         "unpack '%s' in steps of %zu", repr, cs);
 
     /* pack test */
-    mpack_unparser_init(&unparser);
-    unparser.walker.data = fjson;
+    mpack_walker_init(&unparser);
+    unparser.data = fjson;
     b = buf;
     bl = MIN(cs, sizeof(buf));
     do {
@@ -312,8 +311,8 @@ static void signed_positive_packs_with_unsigned_format(void)
   char mpackbuf[256];
   char *buf = mpackbuf;
   size_t buflen = sizeof(mpackbuf);
-  mpack_writer_t writer;
-  mpack_writer_init(&writer);
+  mpack_tokbuf_t writer;
+  mpack_tokbuf_init(&writer);
   tokbuf[tokbufpos++] = mpack_pack_sint(0);
   tokbuf[tokbufpos++] = mpack_pack_sint(1);
   tokbuf[tokbufpos++] = mpack_pack_sint(0x7f);
@@ -342,7 +341,7 @@ static void signed_positive_packs_with_unsigned_format(void)
 
 static void positive_signed_format_unpacks_as_unsigned(void)
 {
-  mpack_reader_t reader;
+  mpack_tokbuf_t reader;
   mpack_token_t toks[4];
   const uint8_t input[] = {
     0xd0, 0x7f,
@@ -354,7 +353,7 @@ static void positive_signed_format_unpacks_as_unsigned(void)
   };
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  mpack_reader_init(&reader);
+  mpack_tokbuf_init(&reader);
   for (size_t i = 0; i < ARRAY_SIZE(toks) && inplen; i++)
     mpack_read(&reader, &inp, &inplen, toks + i);
   mpack_uintmax_t expected[] = {
@@ -397,14 +396,14 @@ static void positive_signed_format_unpacks_as_unsigned(void)
 
 static void unpacking_c1_returns_eread(void)
 {
-  mpack_reader_t reader;
+  mpack_tokbuf_t reader;
   const uint8_t input[] = {0xc1};
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
   mpack_token_t tok;
-  mpack_reader_init(&reader);
-  mpack_parser_t parser;
-  mpack_parser_init(&parser);
+  mpack_tokbuf_init(&reader);
+  mpack_walker_t parser;
+  mpack_walker_init(&parser);
   int res = mpack_read(&reader, &inp, &inplen, &tok),
       res2 = mpack_parse(&parser, &inp, &inplen, parse_enter, parse_exit);
   ok(res == MPACK_ERROR && res2 == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
@@ -412,9 +411,9 @@ static void unpacking_c1_returns_eread(void)
 
 static void very_deep_objects_returns_enomem(void)
 {
-  mpack_parser_t parser;
-  mpack_parser_init(&parser);
-  parser.walker.capacity = 2;
+  mpack_walker_t parser;
+  mpack_walker_init(&parser);
+  parser.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
@@ -425,8 +424,8 @@ static void very_deep_objects_returns_enomem(void)
 
 static void does_not_write_invalid_tokens(void)
 {
-  mpack_writer_t writer;
-  mpack_writer_init(&writer);
+  mpack_tokbuf_t writer;
+  mpack_tokbuf_init(&writer);
   mpack_token_t tok, tok2;
   tok.type = 9999;
   char buf[64], *ptr = buf;
@@ -435,7 +434,7 @@ static void does_not_write_invalid_tokens(void)
   tok2.length = 5;
   ok(mpack_write(&writer, &ptr, &ptrlen, &tok) == MPACK_ERROR,
       "does not write invalid tokens 1");
-  mpack_writer_init(&writer);
+  mpack_tokbuf_init(&writer);
   ok(mpack_write(&writer, &ptr, &ptrlen, &tok2) == MPACK_ERROR,
       "does not write invalid tokens 2");
 }

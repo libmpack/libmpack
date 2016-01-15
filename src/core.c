@@ -11,13 +11,13 @@
 
 static int mpack_rtoken(const char **buf, size_t *buflen,
     mpack_token_t *tok);
-static int mpack_rpending(const char **b, size_t *nl, mpack_reader_t *r);
+static int mpack_rpending(const char **b, size_t *nl, mpack_tokbuf_t *tb);
 static int mpack_rvalue(mpack_token_type_t t, mpack_uint32_t l,
     const char **b, size_t *bl, mpack_token_t *tok);
 static int mpack_rblob(mpack_token_type_t t, mpack_uint32_t l,
     const char **b, size_t *bl, mpack_token_t *tok);
 static int mpack_wtoken(const mpack_token_t *tok, char **b, size_t *bl);
-static int mpack_wpending(char **b, size_t *bl, mpack_writer_t *w);
+static int mpack_wpending(char **b, size_t *bl, mpack_tokbuf_t *tb);
 static int mpack_wpint(char **b, size_t *bl, mpack_value_t v);
 static int mpack_wnint(char **b, size_t *bl, mpack_value_t v);
 static int mpack_wfloat(char **b, size_t *bl, const mpack_token_t *v);
@@ -36,20 +36,14 @@ static int mpack_value(mpack_token_type_t t, mpack_uint32_t l,
 static int mpack_blob(mpack_token_type_t t, mpack_uint32_t l, int et,
     mpack_token_t *tok);
 
-MPACK_API void mpack_reader_init(mpack_reader_t *reader)
+MPACK_API void mpack_tokbuf_init(mpack_tokbuf_t *tokbuf)
 {
-  reader->ppos = 0;
-  reader->plen = 0;
-  reader->passthrough = 0;
+  tokbuf->ppos = 0;
+  tokbuf->plen = 0;
+  tokbuf->passthrough = 0;
 }
 
-MPACK_API void mpack_writer_init(mpack_writer_t *writer)
-{
-  writer->ppos = 0;
-  writer->plen = 0;
-}
-
-MPACK_API int mpack_read(mpack_reader_t *reader, const char **buf,
+MPACK_API int mpack_read(mpack_tokbuf_t *tokbuf, const char **buf,
     size_t *buflen, mpack_token_t *tok)
 {
   int status;
@@ -57,26 +51,26 @@ MPACK_API int mpack_read(mpack_reader_t *reader, const char **buf,
   const char *ptr, *ptr_save;
   assert(*buf && *buflen);
 
-  if (reader->passthrough) {
+  if (tokbuf->passthrough) {
     /* pass data from str/bin/ext directly as a MPACK_TOKEN_CHUNK, adjusting
      * *buf and *buflen */
     tok->type = MPACK_TOKEN_CHUNK;
     tok->data.chunk_ptr = *buf;
-    tok->length = MIN((mpack_uint32_t)*buflen, reader->passthrough);
-    reader->passthrough -= tok->length;
+    tok->length = MIN((mpack_uint32_t)*buflen, tokbuf->passthrough);
+    tokbuf->passthrough -= tok->length;
     *buf += tok->length;
     *buflen -= tok->length;
     goto done;
   }
 
-  initial_ppos = reader->ppos;
+  initial_ppos = tokbuf->ppos;
 
-  if (reader->plen) {
-    if (!mpack_rpending(buf, buflen, reader)) {
+  if (tokbuf->plen) {
+    if (!mpack_rpending(buf, buflen, tokbuf)) {
       return MPACK_EOF;
     }
-    ptr = reader->pending;
-    ptrlen = reader->ppos;
+    ptr = tokbuf->pending;
+    ptrlen = tokbuf->ppos;
   } else {
     ptr = *buf;
     ptrlen = *buflen;
@@ -87,32 +81,32 @@ MPACK_API int mpack_read(mpack_reader_t *reader, const char **buf,
   if ((status = mpack_rtoken(&ptr, &ptrlen, tok))) {
     if (status != MPACK_EOF) return MPACK_ERROR;
     /* need more data */
-    assert(!reader->plen);
-    /* read the remainder of *buf to reader->pending so it can be parsed
-     * later with more data. only required when reader->plen == 0 or else
+    assert(!tokbuf->plen);
+    /* read the remainder of *buf to tokbuf->pending so it can be parsed
+     * later with more data. only required when tokbuf->plen == 0 or else
      * it would have been done already. */
-    reader->plen = tok->length + 1;
-    assert(reader->plen <= sizeof(reader->pending));
-    reader->ppos = 0;
-    status = mpack_rpending(buf, buflen, reader);
+    tokbuf->plen = tok->length + 1;
+    assert(tokbuf->plen <= sizeof(tokbuf->pending));
+    tokbuf->ppos = 0;
+    status = mpack_rpending(buf, buflen, tokbuf);
     assert(!status);
     return MPACK_EOF;
   }
 
   advanced = (size_t)(ptr - ptr_save) - initial_ppos;
-  reader->plen = reader->ppos = 0;
+  tokbuf->plen = tokbuf->ppos = 0;
   *buflen -= advanced; 
   *buf += advanced;
 
   if (tok->type > MPACK_TOKEN_MAP) {
-    reader->passthrough = tok->length;
+    tokbuf->passthrough = tok->length;
   }
 
 done:
   return MPACK_OK;
 }
 
-MPACK_API int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
+MPACK_API int mpack_write(mpack_tokbuf_t *tokbuf, char **buf, size_t *buflen,
     const mpack_token_t *tok)
 {
   int status;
@@ -122,23 +116,23 @@ MPACK_API int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
 
   if (tok->type == MPACK_TOKEN_CHUNK) {
     size_t written, pending, count;
-    if (!writer->plen) writer->ppos = 0;
-    written = writer->ppos;
+    if (!tokbuf->plen) tokbuf->ppos = 0;
+    written = tokbuf->ppos;
     pending = tok->length - written;
     count = MIN(pending, *buflen);
     memcpy(*buf, tok->data.chunk_ptr + written, count);
     *buf += count;
     *buflen -= count;
-    writer->ppos += count;
-    writer->plen = count == pending ? 0 : tok->length;
+    tokbuf->ppos += count;
+    tokbuf->plen = count == pending ? 0 : tok->length;
     return count == pending ? MPACK_OK : MPACK_EOF;
   }
 
-  if (writer->plen) return mpack_wpending(buf, buflen, writer);
+  if (tokbuf->plen) return mpack_wpending(buf, buflen, tokbuf);
 
   if (*buflen < MPACK_MAX_TOKEN_LEN) {
-    ptr = writer->pending;
-    ptrlen = sizeof(writer->pending);
+    ptr = tokbuf->pending;
+    ptrlen = sizeof(tokbuf->pending);
   } else {
     ptr = *buf;
     ptrlen = *buflen;
@@ -147,15 +141,15 @@ MPACK_API int mpack_write(mpack_writer_t *writer, char **buf, size_t *buflen,
   if ((status = mpack_wtoken(tok, &ptr, &ptrlen))) return status;
 
   if (*buflen < MPACK_MAX_TOKEN_LEN) {
-    size_t toklen = sizeof(writer->pending) - ptrlen;
+    size_t toklen = sizeof(tokbuf->pending) - ptrlen;
     size_t write_cnt = MIN(toklen, *buflen);
-    memcpy(*buf, writer->pending, write_cnt);
+    memcpy(*buf, tokbuf->pending, write_cnt);
     *buf += write_cnt;
     *buflen -= write_cnt;
     if (write_cnt < toklen) {
       assert(!*buflen);
-      writer->plen = toklen;
-      writer->ppos = write_cnt;
+      tokbuf->plen = toklen;
+      tokbuf->ppos = write_cnt;
       return MPACK_EOF;
     }
   } else {
@@ -245,14 +239,14 @@ static int mpack_rtoken(const char **buf, size_t *buflen,
 }
 
 static int mpack_rpending(const char **buf, size_t *buflen,
-    mpack_reader_t *reader)
+    mpack_tokbuf_t *state)
 {
   size_t count;
-  assert(reader->ppos < reader->plen);
-  count = MIN(reader->plen - reader->ppos, *buflen);
-  memcpy(reader->pending + reader->ppos, *buf, count);
-  reader->ppos += count;
-  if (reader->ppos < reader->plen) {
+  assert(state->ppos < state->plen);
+  count = MIN(state->plen - state->ppos, *buflen);
+  memcpy(state->pending + state->ppos, *buf, count);
+  state->ppos += count;
+  if (state->ppos < state->plen) {
     /* consume buffer since no token will be parsed yet. */
     *buf += *buflen;
     *buflen = 0;
@@ -353,17 +347,17 @@ static int mpack_wtoken(const mpack_token_t *tok, char **buf,
   }
 }
 
-static int mpack_wpending(char **buf, size_t *buflen, mpack_writer_t *writer)
+static int mpack_wpending(char **buf, size_t *buflen, mpack_tokbuf_t *state)
 {
   size_t count;
-  assert(writer->ppos < writer->plen);
-  count = MIN(writer->plen - writer->ppos, *buflen);
-  memcpy(*buf, writer->pending + writer->ppos, count);
-  writer->ppos += count;
+  assert(state->ppos < state->plen);
+  count = MIN(state->plen - state->ppos, *buflen);
+  memcpy(*buf, state->pending + state->ppos, count);
+  state->ppos += count;
   *buf += count;
   *buflen -= count;
-  if (writer->ppos == writer->plen) {
-    writer->plen = 0;
+  if (state->ppos == state->plen) {
+    state->plen = 0;
     return MPACK_OK;
   }
   return MPACK_EOF;

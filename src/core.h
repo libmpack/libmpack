@@ -65,22 +65,16 @@ typedef struct mpack_token_s {
   } data;
 } mpack_token_t;
 
-typedef struct mpack_reader_s {
+typedef struct mpack_tokbuf_s {
   char pending[MPACK_MAX_TOKEN_LEN];
   size_t ppos, plen;
   mpack_uint32_t passthrough;
-} mpack_reader_t;
+} mpack_tokbuf_t;
 
-typedef struct mpack_writer_s {
-  char pending[MPACK_MAX_TOKEN_LEN];
-  size_t ppos, plen;
-} mpack_writer_t;
-
-MPACK_API void mpack_reader_init(mpack_reader_t *r);
-MPACK_API void mpack_writer_init(mpack_writer_t *w);
-MPACK_API int mpack_read(mpack_reader_t *r, const char **b, size_t *bl,
+MPACK_API void mpack_tokbuf_init(mpack_tokbuf_t *tb);
+MPACK_API int mpack_read(mpack_tokbuf_t *tb, const char **b, size_t *bl,
     mpack_token_t *tok);
-MPACK_API int mpack_write(mpack_writer_t *w, char **b, size_t *bl,
+MPACK_API int mpack_write(mpack_tokbuf_t *tb, char **b, size_t *bl,
     const mpack_token_t *tok);
 
 #endif  /* MPACK_CORE_H */
