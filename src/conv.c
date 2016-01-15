@@ -1,9 +1,9 @@
 #include "conv.h"
 
+static int mpack_is_be(void) FPURE;
+
 #define POW2(n) \
   ((double)(1 << (n / 2)) * (double)(1 << (n / 2)) * (double)(1 << (n % 2)))
-
-#define MPACK_BIG_ENDIAN (*(mpack_uint32_t *)"\xff\0\0\0" == 0xff000000)
 
 #define MPACK_SWAP_VALUE(val)                                  \
   do {                                                         \
@@ -140,7 +140,7 @@ MPACK_API mpack_token_t mpack_pack_float_fast(double v)
     conv.d = v;
     rv.length = 8;
     rv.data.value = conv.m;
-    if (MPACK_BIG_ENDIAN) {
+    if (mpack_is_be()) {
       MPACK_SWAP_VALUE(rv.data.value);
     }
   }
@@ -285,11 +285,22 @@ MPACK_API double mpack_unpack_float_fast(const mpack_token_t *t)
     } conv;
     conv.m = t->data.value;
     
-    if (MPACK_BIG_ENDIAN) {
+    if (mpack_is_be()) {
       MPACK_SWAP_VALUE(conv.m);
     }
 
     return conv.d;
   }
+}
+
+static int mpack_is_be(void)
+{
+  union {
+    mpack_uint32_t i;
+    char c[sizeof(mpack_uint32_t)];
+  } test;
+
+  test.i = 1;
+  return test.c[0] == 0;
 }
 

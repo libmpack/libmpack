@@ -10,7 +10,7 @@
 #include <stddef.h>
 
 #ifdef __GNUC__
-# define FPURE __attribute__((pure))
+# define FPURE __attribute__((const))
 # define FNONULL __attribute__((nonnull))
 #else
 # define FPURE
