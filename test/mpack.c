@@ -269,19 +269,23 @@ static void fixture_test(int fixture_idx)
   char repr[32];
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
+    mpack_tokbuf_t tokbuf;
     mpack_walker_t parser, unparser;
     size_t cs = chunksizes[i];
     /* unpack test */
     bufpos = 0;
+    mpack_tokbuf_init(&tokbuf);
     mpack_walker_init(&parser);
     char *b = (char *)fmsgpack;
     size_t bl = cs;
     int status;
 
     do {
-      status = mpack_parse(&parser, (const char **)&b, &bl, parse_enter,
-          parse_exit);
+      mpack_token_t tok;
+      while (mpack_read(&tokbuf, (const char **)&b, &bl, &tok))
+        bl = cs;
       bl = cs;
+      status = mpack_parse(&parser, tok, parse_enter, parse_exit);
     } while (status);
 
     is(buf, fjson, cs == SIZE_MAX ?
@@ -290,11 +294,17 @@ static void fixture_test(int fixture_idx)
 
     /* pack test */
     mpack_walker_init(&unparser);
+    mpack_tokbuf_init(&tokbuf);
     unparser.data = fjson;
     b = buf;
     bl = MIN(cs, sizeof(buf));
     do {
-      status = mpack_unparse(&unparser, &b, &bl, unparse_enter, unparse_exit);
+      mpack_token_t tok;
+      status = mpack_unparse(&unparser, &tok, unparse_enter, unparse_exit);
+      /* skip gcc "may be uninitialized" warning on amalgamation test */
+      if (status == MPACK_NOMEM) abort();
+      while (mpack_write(&tokbuf, &b, &bl, &tok))
+        bl = cs;
       bl = cs;
     } while (status);
 
@@ -404,21 +414,27 @@ static void unpacking_c1_returns_eread(void)
   mpack_tokbuf_init(&reader);
   mpack_walker_t parser;
   mpack_walker_init(&parser);
-  int res = mpack_read(&reader, &inp, &inplen, &tok),
-      res2 = mpack_parse(&parser, &inp, &inplen, parse_enter, parse_exit);
-  ok(res == MPACK_ERROR && res2 == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
+  int res = mpack_read(&reader, &inp, &inplen, &tok);
+  ok(res == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
 static void very_deep_objects_returns_enomem(void)
 {
+  mpack_tokbuf_t tokbuf;
   mpack_walker_t parser;
+  mpack_tokbuf_init(&tokbuf);
   mpack_walker_init(&parser);
   parser.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
+  mpack_token_t toks[3];
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  ok(mpack_parse(&parser, &inp, &inplen, parse_enter, parse_exit) == MPACK_NOMEM
-  && inplen == 1 && inp == (const char *)input + 2,
+  mpack_read(&tokbuf, &inp, &inplen, toks);
+  mpack_read(&tokbuf, &inp, &inplen, toks + 1);
+  mpack_read(&tokbuf, &inp, &inplen, toks + 2);
+  ok(mpack_parse(&parser, toks[0], parse_enter, parse_exit) == MPACK_EOF
+  && mpack_parse(&parser, toks[1], parse_enter, parse_exit) == MPACK_EOF
+  && mpack_parse(&parser, toks[2], parse_enter, parse_exit) == MPACK_NOMEM,
   "very deep objects return MPACK_ENOMEM");
 }
 
