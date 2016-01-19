@@ -11,36 +11,21 @@ MPACK_API void mpack_walker_init(mpack_walker_t *walker)
   walker->items[0].pos = (size_t)-1;
 }
 
-MPACK_API int mpack_parse(mpack_walker_t *walker, mpack_token_t tok,
-    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
+MPACK_API int mpack_walk(mpack_walker_t *walker, mpack_walk_cb enter_cb,
+    mpack_walk_cb exit_cb)
 {
+  int status;
   mpack_node_t *n;
 
   if (mpack_walker_full(walker)) return MPACK_NOMEM;
   n = mpack_walker_push(walker);
-  n->tok = tok;
-  enter_cb(walker, n);
-
-  while ((n = mpack_walker_pop(walker))) {
-    exit_cb(walker, n);
-    if (!walker->size) return MPACK_OK;
+  if ((status = enter_cb(walker, n))) {
+    walker->size--;
+    return status;
   }
 
-  return MPACK_EOF;
-}
-
-MPACK_API int mpack_unparse(mpack_walker_t *walker, mpack_token_t *tok,
-    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
-{
-  mpack_node_t *n;
-
-  if (mpack_walker_full(walker)) return MPACK_NOMEM;
-  n = mpack_walker_push(walker);
-  enter_cb(walker, n);
-  *tok = n->tok;
-
   while ((n = mpack_walker_pop(walker))) {
-    exit_cb(walker, n);
+    (void)exit_cb(walker, n);
     if (!walker->size) return MPACK_OK;
   }
 
