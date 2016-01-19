@@ -33,12 +33,6 @@
 static char buf[0xffffff];
 static size_t bufpos;
 
-typedef struct {
-  mpack_tokbuf_t tokbuf;
-  char *buf, *input;
-  size_t buflen;
-} walk_data_t;
-
 static void w(const char *fmt, ...)
 {
   va_list ap;
@@ -62,12 +56,11 @@ static uint32_t item_count(const char *s)
   return count;
 }
 
-static int unparse_enter(mpack_walker_t *walker, mpack_node_t *node)
+static void unparse_enter(mpack_walker_t *walker, mpack_node_t *node, void *d)
 {
-  int status;
-  walk_data_t *data = walker->data;
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = parent ? parent->data : data->input;
+  char *p = parent ? parent->data : d;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
     node->tok = mpack_pack_chunk(p, parent->tok.length);
@@ -160,17 +153,13 @@ static int unparse_enter(mpack_walker_t *walker, mpack_node_t *node)
   }
 
 end:
-  if (!(status = mpack_write(&data->tokbuf, &data->buf, &data->buflen,
-        &node->tok))) {
-    node->data = p;
-    if (parent) parent->data = p;
-  }
-  return status;
+  node->data = p;
+  if (parent) parent->data = p;
 }
 
-static int unparse_exit(mpack_walker_t *walker, mpack_node_t *node)
+static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node, void *d)
 {
-  (void)(walker);
+  (void)(walker); (void)(d);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   char *p = node->data;
 
@@ -185,19 +174,14 @@ static int unparse_exit(mpack_walker_t *walker, mpack_node_t *node)
 
   node->data = p;
   if (parent) parent->data = p;
-  return 0;
 }
 
-static int parse_enter(mpack_walker_t *walker, mpack_node_t *node)
+static void parse_enter(mpack_walker_t *walker, mpack_node_t *node, void *d)
 {
-  int status;
-  walk_data_t *data = walker->data;
+  (void)(walker); (void)(d);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
-
-  if ((status = mpack_read(&data->tokbuf,
-          (const char **)&data->buf, &data->buflen, t))) return status;
 
   switch (t->type) {
     case MPACK_TOKEN_NIL:
@@ -239,13 +223,11 @@ static int parse_enter(mpack_walker_t *walker, mpack_node_t *node)
     case MPACK_TOKEN_MAP:
       w("{"); break;
   }
-
-  return 0;
 }
 
-static int parse_exit(mpack_walker_t *walker, mpack_node_t *node)
+static void parse_exit(mpack_walker_t *walker, mpack_node_t *node, void *d)
 {
-  (void)(walker);
+  (void)(walker); (void)(d);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -265,7 +247,6 @@ static int parse_exit(mpack_walker_t *walker, mpack_node_t *node)
   if (p && p->type < MPACK_TOKEN_BIN && parent->pos < p->length) {
     w(p->type == MPACK_TOKEN_MAP ? (parent->pos % 2 ? ":" : ",") : ",");
   }
-  return 0;
 }
 
 /* Each unpack/pack test is executed multiple times, with each feeding data in
@@ -289,21 +270,21 @@ static void fixture_test(int fixture_idx)
   char repr[32];
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
-    walk_data_t wd;
+    mpack_tokbuf_t tokbuf;
     mpack_walker_t walker;
     size_t cs = chunksizes[i];
     int status;
     /* unpack test */
     bufpos = 0;
-    mpack_tokbuf_init(&wd.tokbuf);
+    mpack_tokbuf_init(&tokbuf);
     mpack_walker_init(&walker);
-    walker.data = &wd;
-    wd.buf = (char *)fmsgpack;
-    wd.buflen = cs;
+    char *b = (char *)fmsgpack;
+    size_t bl = cs;
 
     do {
-      status = mpack_walk(&walker, parse_enter, parse_exit);
-      wd.buflen = cs;
+      status = mpack_parse(&walker, &tokbuf, parse_enter, parse_exit,
+          (const char **)&b, &bl, NULL);
+      bl = cs;
     } while (status);
 
     is(buf, fjson, cs == SIZE_MAX ?
@@ -312,14 +293,13 @@ static void fixture_test(int fixture_idx)
 
     /* pack test */
     mpack_walker_init(&walker);
-    mpack_tokbuf_init(&wd.tokbuf);
-    walker.data = &wd;
-    wd.input = fjson;
-    wd.buf = buf;
-    wd.buflen = MIN(cs, sizeof(buf));
+    mpack_tokbuf_init(&tokbuf);
+    b = buf;
+    bl = MIN(cs, sizeof(buf));
     do {
-      status = mpack_walk(&walker, unparse_enter, unparse_exit);
-      wd.buflen = cs;
+      status = mpack_unparse(&walker, &tokbuf, unparse_enter, unparse_exit,
+          &b, &bl, fjson);
+      bl = cs;
     } while (status);
 
     cmp_mem(buf, fmsgpack, fmsgpacklen, cs == SIZE_MAX ?
@@ -435,18 +415,15 @@ static void unpacking_c1_returns_eread(void)
 static void very_deep_objects_returns_enomem(void)
 {
   mpack_walker_t parser;
-  walk_data_t wd;
-  mpack_tokbuf_init(&wd.tokbuf);
+  mpack_tokbuf_t tokbuf;
+  mpack_tokbuf_init(&tokbuf);
   mpack_walker_init(&parser);
-  parser.data = &wd;
   parser.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
-  wd.buf = (char *)input;
-  wd.buflen = sizeof(input);
-  ok(mpack_walk(&parser, parse_enter, parse_exit) == MPACK_EOF
-  && mpack_walk(&parser, parse_enter, parse_exit) == MPACK_EOF
-  && mpack_walk(&parser, parse_enter, parse_exit) == MPACK_NOMEM
-  && wd.buf == (char *)input + 2 && wd.buflen == 1,
+  const char *buf = (const char *)input;
+  size_t buflen = sizeof(input);
+  ok(mpack_parse(&parser, &tokbuf, parse_enter, parse_exit, &buf, &buflen,
+        NULL) == MPACK_NOMEM && buf == (char *)input + 2 && buflen == 1,
   "very deep objects return MPACK_ENOMEM");
 }
 
