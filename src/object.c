@@ -43,36 +43,32 @@ MPACK_API int mpack_walk(mpack_walker_t *walker, mpack_walk_cb enter_cb,
   return MPACK_WALKED;
 }
 
+#define MPACK_WALK_LOOP(visit_state, visit)                                   \
+  do {                                                                        \
+    int status;                                                               \
+    while (*buflen) {                                                         \
+      if (walker->state == visit_state) {                                     \
+        mpack_node_t *top = walker->items + walker->size;                     \
+        if ((status = visit(tokbuf, buf, buflen, &top->tok))) return status;  \
+      }                                                                       \
+      status = mpack_walk(walker, enter_cb, exit_cb, d);                      \
+      if (status != MPACK_WALKED) return status;                              \
+    }                                                                         \
+    return MPACK_EOF;                                                         \
+  } while (0)
+
 MPACK_API int mpack_parse(mpack_walker_t *walker, mpack_tokbuf_t *tokbuf,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb, const char **buf,
     size_t *buflen, void *d)
 {
-  int status;
-  while (*buflen) {
-    if (walker->state == WALK_STATE_VISIT) {
-      mpack_node_t *top = walker->items + walker->size;
-      if ((status = mpack_read(tokbuf, buf, buflen, &top->tok))) return status;
-    }
-    status = mpack_walk(walker, enter_cb, exit_cb, d);
-    if (status != MPACK_WALKED) return status;
-  }
-  return MPACK_EOF;
+  MPACK_WALK_LOOP(WALK_STATE_VISIT, mpack_read);
 }
 
 MPACK_API int mpack_unparse(mpack_walker_t *walker, mpack_tokbuf_t *tokbuf,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb, char **buf, size_t *buflen,
     void *d)
 {
-  int status;
-  while (*buflen) {
-    if (walker->state == WALK_STATE_POP) {
-      mpack_node_t *top = walker->items + walker->size;
-      if ((status = mpack_write(tokbuf, buf, buflen, &top->tok))) return status;
-    }
-    status = mpack_walk(walker, enter_cb, exit_cb, d);
-    if (status != MPACK_WALKED) return status;
-  }
-  return MPACK_EOF;
+  MPACK_WALK_LOOP(WALK_STATE_POP, mpack_write);
 }
 
 static int mpack_walker_full(mpack_walker_t *walker)
