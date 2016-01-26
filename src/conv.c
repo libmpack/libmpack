@@ -199,38 +199,38 @@ MPACK_API mpack_token_t mpack_pack_map(mpack_uint32_t l)
   return rv;
 }
 
-MPACK_API bool mpack_unpack_boolean(const mpack_token_t *t)
+MPACK_API bool mpack_unpack_boolean(mpack_token_t t)
 {
-  return t->data.value.lo || t->data.value.hi;
+  return t.data.value.lo || t.data.value.hi;
 }
 
-MPACK_API mpack_uintmax_t mpack_unpack_uint(const mpack_token_t *t)
+MPACK_API mpack_uintmax_t mpack_unpack_uint(mpack_token_t t)
 {
-  return (((mpack_uintmax_t)t->data.value.hi << 31) << 1) | t->data.value.lo;
+  return (((mpack_uintmax_t)t.data.value.hi << 31) << 1) | t.data.value.lo;
 }
 
 /* unpack signed integer without relying on two's complement as internal
  * representation */
-MPACK_API mpack_sintmax_t mpack_unpack_sint(const mpack_token_t *t)
+MPACK_API mpack_sintmax_t mpack_unpack_sint(mpack_token_t t)
 {
-  mpack_uint32_t hi = t->data.value.hi;
-  mpack_uint32_t lo = t->data.value.lo;
+  mpack_uint32_t hi = t.data.value.hi;
+  mpack_uint32_t lo = t.data.value.lo;
   mpack_uintmax_t rv = lo;
-  assert(t->length <= sizeof(mpack_sintmax_t));
+  assert(t.length <= sizeof(mpack_sintmax_t));
 
-  if (t->length == 8) {
+  if (t.length == 8) {
     rv |= (((mpack_uintmax_t)hi) << 31) << 1;
   }
   /* reverse the two's complement so that lo/hi contain the absolute value.
    * note that we have to mask ~rv so that it reflects the two's complement
    * of the appropriate byte length */
-  rv = (~rv & (((mpack_uintmax_t)1 << ((t->length * 8) - 1)) - 1)) + 1;
+  rv = (~rv & (((mpack_uintmax_t)1 << ((t.length * 8) - 1)) - 1)) + 1;
   /* negate and return the absolute value, making sure mpack_sintmax_t can
    * represent the positive cast. */
   return -((mpack_sintmax_t)(rv - 1)) - 1;
 }
 
-MPACK_API double mpack_unpack_float_compat(const mpack_token_t *t)
+MPACK_API double mpack_unpack_float_compat(mpack_token_t t)
 {
   mpack_uint32_t sign;
   mpack_sint32_t exponent, bias;
@@ -238,24 +238,24 @@ MPACK_API double mpack_unpack_float_compat(const mpack_token_t *t)
   unsigned expbits;
   double mant;
 
-  if (t->data.value.lo == 0 && t->data.value.hi == 0)
+  if (t.data.value.lo == 0 && t.data.value.hi == 0)
     /* nothing to do */
     return 0;
 
-  if (t->length == 4) mantbits = 23, expbits = 8;
+  if (t.length == 4) mantbits = 23, expbits = 8;
   else mantbits = 52, expbits = 11;
   bias = (1 << (expbits - 1)) - 1;
 
   /* restore sign/exponent/mantissa */
   if (mantbits == 52) {
-    sign = t->data.value.hi >> 31;
-    exponent = (t->data.value.hi >> 20) & ((1 << 11) - 1);
-    mant = (t->data.value.hi & ((1 << 20) - 1)) * POW2(32);
-    mant += t->data.value.lo;
+    sign = t.data.value.hi >> 31;
+    exponent = (t.data.value.hi >> 20) & ((1 << 11) - 1);
+    mant = (t.data.value.hi & ((1 << 20) - 1)) * POW2(32);
+    mant += t.data.value.lo;
   } else {
-    sign = t->data.value.lo >> 31;
-    exponent = (t->data.value.lo >> 23) & ((1 << 8) - 1);
-    mant = t->data.value.lo & ((1 << 23) - 1);
+    sign = t.data.value.lo >> 31;
+    exponent = (t.data.value.lo >> 23) & ((1 << 8) - 1);
+    mant = t.data.value.lo & ((1 << 23) - 1);
   }
 
   mant /= POW2(mantbits);
@@ -269,21 +269,21 @@ MPACK_API double mpack_unpack_float_compat(const mpack_token_t *t)
   return mant * (sign ? -1 : 1);
 }
 
-MPACK_API double mpack_unpack_float_fast(const mpack_token_t *t)
+MPACK_API double mpack_unpack_float_fast(mpack_token_t t)
 {
-  if (t->length == 4) {
+  if (t.length == 4) {
     union {
       float f;
       mpack_uint32_t m;
     } conv;
-    conv.m = t->data.value.lo;
+    conv.m = t.data.value.lo;
     return conv.f;
   } else {
     union {
       double d;
       mpack_value_t m;
     } conv;
-    conv.m = t->data.value;
+    conv.m = t.data.value;
     
     if (mpack_is_be()) {
       MPACK_SWAP_VALUE(conv.m);

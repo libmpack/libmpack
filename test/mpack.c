@@ -187,14 +187,14 @@ static void parse_enter(mpack_walker_t *walker, mpack_node_t *node, void *d)
     case MPACK_TOKEN_NIL:
       w("null"); break;
     case MPACK_TOKEN_BOOLEAN:
-      w(mpack_unpack_boolean(t) ? "true" : "false"); break;
+      w(mpack_unpack_boolean(*t) ? "true" : "false"); break;
     case MPACK_TOKEN_UINT:
-      w("%" UFORMAT, mpack_unpack_uint(t)); break;
+      w("%" UFORMAT, mpack_unpack_uint(*t)); break;
     case MPACK_TOKEN_SINT:
-      w("%" SFORMAT, mpack_unpack_sint(t)); break;
+      w("%" SFORMAT, mpack_unpack_sint(*t)); break;
     case MPACK_TOKEN_FLOAT: {
       /* test both unpack_float implementations */
-      double d = mpack_unpack_float_fast(t), d2 = mpack_unpack_float_compat(t);
+      double d = mpack_unpack_float_fast(*t),d2 = mpack_unpack_float_compat(*t);
       (void)(d2);
       assert(d == d2);
       w("%.*g", 17, d);
@@ -377,11 +377,11 @@ static void positive_signed_format_unpacks_as_unsigned(void)
 #endif
   };
   mpack_uintmax_t actual[] = {
-    mpack_unpack_uint(toks + 0),
-    mpack_unpack_uint(toks + 1),
-    mpack_unpack_uint(toks + 2),
+    mpack_unpack_uint(toks[0]),
+    mpack_unpack_uint(toks[1]),
+    mpack_unpack_uint(toks[2]),
 #ifndef FORCE_32BIT_INTS
-    mpack_unpack_uint(toks + 3)
+    mpack_unpack_uint(toks[3])
 #endif
   };
   mpack_token_type_t actual_types[] = {

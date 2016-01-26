@@ -28,15 +28,15 @@ typedef struct mpack_walker_s {
 
 typedef void(*mpack_walk_cb)(mpack_walker_t *w, mpack_node_t *n, void *d);
 
-MPACK_API void mpack_walker_init(mpack_walker_t *p);
+MPACK_API void mpack_walker_init(mpack_walker_t *p) FUNUSED FNONULL;
 MPACK_API int mpack_walk(mpack_walker_t *w, mpack_walk_cb enter_cb,
-    mpack_walk_cb exit_cb, void *data);
+    mpack_walk_cb exit_cb, void *data) FUNUSED FNONULL_ARG((1,2,3));
 MPACK_API int mpack_parse(mpack_walker_t *w, mpack_tokbuf_t *tb,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb, const char **b, size_t *bl,
-    void *data);
+    void *data) FUNUSED FNONULL_ARG((1,2,3,4,5,6));
 MPACK_API int mpack_unparse(mpack_walker_t *w, mpack_tokbuf_t *tb,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb, char **b, size_t *bl,
-    void *data);
+    void *data) FUNUSED FNONULL_ARG((1,2,3,4,5,6));
 
 
 #endif  /* MPACK_OBJECT_H */

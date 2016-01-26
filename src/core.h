@@ -12,9 +12,13 @@
 #ifdef __GNUC__
 # define FPURE __attribute__((const))
 # define FNONULL __attribute__((nonnull))
+# define FNONULL_ARG(x) __attribute__((nonnull x))
+# define FUNUSED __attribute__((unused))
 #else
 # define FPURE
 # define FNONULL
+# define FNONULL_ARG(x)
+# define FUNUSED
 #endif
 
 #if UINT_MAX == 0xffffffff
@@ -71,10 +75,10 @@ typedef struct mpack_tokbuf_s {
   mpack_uint32_t passthrough;
 } mpack_tokbuf_t;
 
-MPACK_API void mpack_tokbuf_init(mpack_tokbuf_t *tb);
+MPACK_API void mpack_tokbuf_init(mpack_tokbuf_t *tb) FUNUSED FNONULL;
 MPACK_API int mpack_read(mpack_tokbuf_t *tb, const char **b, size_t *bl,
-    mpack_token_t *tok);
+    mpack_token_t *tok) FUNUSED FNONULL;
 MPACK_API int mpack_write(mpack_tokbuf_t *tb, char **b, size_t *bl,
-    const mpack_token_t *tok);
+    const mpack_token_t *tok) FUNUSED FNONULL;
 
 #endif  /* MPACK_CORE_H */
