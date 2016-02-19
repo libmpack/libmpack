@@ -71,6 +71,7 @@ typedef struct mpack_token_s {
 
 typedef struct mpack_tokbuf_s {
   char pending[MPACK_MAX_TOKEN_LEN];
+  mpack_token_t pending_tok;
   size_t ppos, plen;
   mpack_uint32_t passthrough;
 } mpack_tokbuf_t;

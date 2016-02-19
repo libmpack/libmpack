@@ -56,11 +56,10 @@ static uint32_t item_count(const char *s)
   return count;
 }
 
-static void unparse_enter(mpack_walker_t *walker, mpack_node_t *node, void *d)
+static void unparse_enter(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = parent ? parent->data : d;
+  char *p = parent ? parent->data : walker->data;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
     node->tok = mpack_pack_chunk(p, parent->tok.length);
@@ -157,9 +156,9 @@ end:
   if (parent) parent->data = p;
 }
 
-static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node, void *d)
+static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(walker); (void)(d);
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   char *p = node->data;
 
@@ -176,9 +175,9 @@ static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node, void *d)
   if (parent) parent->data = p;
 }
 
-static void parse_enter(mpack_walker_t *walker, mpack_node_t *node, void *d)
+static void parse_enter(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(walker); (void)(d);
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -225,9 +224,9 @@ static void parse_enter(mpack_walker_t *walker, mpack_node_t *node, void *d)
   }
 }
 
-static void parse_exit(mpack_walker_t *walker, mpack_node_t *node, void *d)
+static void parse_exit(mpack_walker_t *walker, mpack_node_t *node)
 {
-  (void)(walker); (void)(d);
+  (void)(walker);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -270,37 +269,39 @@ static void fixture_test(int fixture_idx)
   char repr[32];
   snprintf(repr, sizeof(repr), "%s", fjson);
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
-    mpack_tokbuf_t tokbuf;
-    mpack_walker_t walker;
+    mpack_parser_t parser;
     size_t cs = chunksizes[i];
-    int status;
+    int s;
     /* unpack test */
     bufpos = 0;
-    mpack_tokbuf_init(&tokbuf);
-    mpack_walker_init(&walker);
+    mpack_parser_init(&parser);
     char *b = (char *)fmsgpack;
     size_t bl = cs;
 
     do {
-      status = mpack_parse(&walker, &tokbuf, parse_enter, parse_exit,
-          (const char **)&b, &bl, NULL);
-      bl = cs;
-    } while (status);
+      s = mpack_parse(&parser, (const char **)&b, &bl, parse_enter, parse_exit);
+      if (s) {
+        assert(s == MPACK_EOF);
+        bl = cs;
+      }
+    } while (s);
 
     is(buf, fjson, cs == SIZE_MAX ?
         "unpack '%s' in a single step" :
         "unpack '%s' in steps of %zu", repr, cs);
 
     /* pack test */
-    mpack_walker_init(&walker);
-    mpack_tokbuf_init(&tokbuf);
+    mpack_parser_init(&parser);
     b = buf;
     bl = MIN(cs, sizeof(buf));
+    parser.walker.data = fjson;
     do {
-      status = mpack_unparse(&walker, &tokbuf, unparse_enter, unparse_exit,
-          &b, &bl, fjson);
-      bl = cs;
-    } while (status);
+      s = mpack_unparse(&parser, &b, &bl, unparse_enter, unparse_exit);
+      if (s) {
+        assert(s == MPACK_EOF);
+        bl = cs;
+      }
+    } while (s);
 
     cmp_mem(buf, fmsgpack, fmsgpacklen, cs == SIZE_MAX ?
         "pack '%s' in a single step" :
@@ -414,16 +415,14 @@ static void unpacking_c1_returns_eread(void)
 
 static void very_deep_objects_returns_enomem(void)
 {
-  mpack_walker_t parser;
-  mpack_tokbuf_t tokbuf;
-  mpack_tokbuf_init(&tokbuf);
-  mpack_walker_init(&parser);
-  parser.capacity = 2;
+  mpack_parser_t parser;
+  mpack_parser_init(&parser);
+  parser.walker.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *buf = (const char *)input;
   size_t buflen = sizeof(input);
-  ok(mpack_parse(&parser, &tokbuf, parse_enter, parse_exit, &buf, &buflen,
-        NULL) == MPACK_NOMEM && buf == (char *)input + 2 && buflen == 1,
+  ok(mpack_parse(&parser, &buf, &buflen, parse_enter, parse_exit)
+      == MPACK_NOMEM && buf == (char *)input + 2 && buflen == 1,
   "very deep objects return MPACK_ENOMEM");
 }
 

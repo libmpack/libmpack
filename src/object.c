@@ -1,74 +1,100 @@
 #include "object.h"
 
-enum {
-  WALK_STATE_PUSH = 1,
-  WALK_STATE_VISIT,
-  WALK_STATE_POP
-};
-
 static int mpack_walker_full(mpack_walker_t *w);
 static mpack_node_t *mpack_walker_push(mpack_walker_t *w);
 static mpack_node_t *mpack_walker_pop(mpack_walker_t *w);
 
 MPACK_API void mpack_walker_init(mpack_walker_t *walker)
 {
+  walker->data = NULL;
   walker->capacity = MPACK_MAX_OBJECT_DEPTH;
   walker->size = 0;
-  walker->state = WALK_STATE_PUSH;
   walker->items[0].pos = (size_t)-1;
 }
 
-MPACK_API int mpack_walk(mpack_walker_t *walker, mpack_walk_cb enter_cb,
-    mpack_walk_cb exit_cb, void *data)
+MPACK_API void mpack_parser_init(mpack_parser_t *parser)
 {
-  mpack_node_t *n;
-
-  if (walker->state == WALK_STATE_PUSH) {
-    if (mpack_walker_full(walker)) return MPACK_NOMEM;
-    n = mpack_walker_push(walker);
-    walker->state = WALK_STATE_VISIT;
-  } else if (walker->state == WALK_STATE_VISIT) {
-    n = walker->items + walker->size;
-    enter_cb(walker, n, data);
-    walker->state = WALK_STATE_POP;
-  } else {
-    assert(walker->state == WALK_STATE_POP);
-    while ((n = mpack_walker_pop(walker))) {
-      exit_cb(walker, n, data);
-      if (!walker->size) return MPACK_OK;
-    }
-    walker->state = WALK_STATE_PUSH;
-  }
-
-  return MPACK_WALKED;
+  mpack_tokbuf_init(&parser->tokbuf);
+  mpack_walker_init(&parser->walker);
+  parser->status = 0;
 }
 
-#define MPACK_WALK_LOOP(visit_state, visit)                                   \
-  do {                                                                        \
-    int status;                                                               \
-    while (*buflen) {                                                         \
-      if (walker->state == visit_state) {                                     \
-        mpack_node_t *top = walker->items + walker->size;                     \
-        if ((status = visit(tokbuf, buf, buflen, &top->tok))) return status;  \
-      }                                                                       \
-      status = mpack_walk(walker, enter_cb, exit_cb, d);                      \
-      if (status != MPACK_WALKED) return status;                              \
-    }                                                                         \
-    return MPACK_EOF;                                                         \
+#define MPACK_WALK(action)                                                  \
+  do {                                                                      \
+    mpack_node_t *n;                                                        \
+                                                                            \
+    if (mpack_walker_full(walker)) return MPACK_NOMEM;                      \
+    n = mpack_walker_push(walker);                                          \
+    action;                                                                 \
+                                                                            \
+    while ((n = mpack_walker_pop(walker))) {                                \
+      exit_cb(walker, n);                                                   \
+      if (!walker->size) return MPACK_OK;                                   \
+    }                                                                       \
+                                                                            \
+    return MPACK_EOF;                                                       \
   } while (0)
 
-MPACK_API int mpack_parse(mpack_walker_t *walker, mpack_tokbuf_t *tokbuf,
-    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb, const char **buf,
-    size_t *buflen, void *d)
+MPACK_API int mpack_parse_tok(mpack_walker_t *walker, mpack_token_t tok,
+    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
 {
-  MPACK_WALK_LOOP(WALK_STATE_VISIT, mpack_read);
+  MPACK_WALK({n->tok = tok; enter_cb(walker, n);});
 }
 
-MPACK_API int mpack_unparse(mpack_walker_t *walker, mpack_tokbuf_t *tokbuf,
-    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb, char **buf, size_t *buflen,
-    void *d)
+MPACK_API int mpack_unparse_tok(mpack_walker_t *walker, mpack_token_t *tok,
+    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
 {
-  MPACK_WALK_LOOP(WALK_STATE_POP, mpack_write);
+  MPACK_WALK({enter_cb(walker, n); *tok = n->tok;});
+}
+
+MPACK_API int mpack_parse(mpack_parser_t *parser, const char **buf,
+    size_t *buflen, mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
+{
+  int status = MPACK_EOF;
+
+  while (*buflen && status) {
+    mpack_token_t tok;
+    mpack_tokbuf_t *tb = &parser->tokbuf;
+    mpack_walker_t *w = &parser->walker;
+    const char *buf_save = *buf;
+    size_t buflen_save = *buflen;
+
+    if ((status = mpack_read(tb, buf, buflen, &tok)) == MPACK_OK) {
+      status = mpack_parse_tok(w, tok, enter_cb, exit_cb);
+      if (status == MPACK_NOMEM) {
+        /* restore buf/buflen so the next call will read the same token */
+        *buf = buf_save;
+        *buflen = buflen_save;
+        break;
+      }
+    }
+  }
+
+  return status;
+}
+
+MPACK_API int mpack_unparse(mpack_parser_t *parser, char **buf, size_t *buflen,
+    mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
+{
+  int status = MPACK_EOF;
+
+  while (*buflen && status) {
+    int write_status;
+    mpack_token_t tok;
+    mpack_tokbuf_t *tb = &parser->tokbuf;
+    mpack_walker_t *w = &parser->walker;
+
+    if (!tb->plen) {
+      parser->status = mpack_unparse_tok(w, &tok, enter_cb, exit_cb);
+      if (parser->status == MPACK_NOMEM) break;
+    }
+
+    status = parser->status;
+    write_status = mpack_write(tb, buf, buflen, &tok);
+    status = write_status ? write_status : status;
+  }
+
+  return status;
 }
 
 static int mpack_walker_full(mpack_walker_t *walker)
