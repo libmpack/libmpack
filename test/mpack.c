@@ -56,10 +56,10 @@ static uint32_t item_count(const char *s)
   return count;
 }
 
-static void unparse_enter(mpack_walker_t *walker, mpack_node_t *node)
+static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
 {
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = parent ? parent->data : walker->data;
+  char *p = parent ? parent->data : parser->data;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
     node->tok = mpack_pack_chunk(p, parent->tok.length);
@@ -156,9 +156,9 @@ end:
   if (parent) parent->data = p;
 }
 
-static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node)
+static void unparse_exit(mpack_parser_t *parser, mpack_node_t *node)
 {
-  (void)(walker);
+  (void)(parser);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   char *p = node->data;
 
@@ -175,9 +175,9 @@ static void unparse_exit(mpack_walker_t *walker, mpack_node_t *node)
   if (parent) parent->data = p;
 }
 
-static void parse_enter(mpack_walker_t *walker, mpack_node_t *node)
+static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
 {
-  (void)(walker);
+  (void)(parser);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -224,9 +224,9 @@ static void parse_enter(mpack_walker_t *walker, mpack_node_t *node)
   }
 }
 
-static void parse_exit(mpack_walker_t *walker, mpack_node_t *node)
+static void parse_exit(mpack_parser_t *parser, mpack_node_t *node)
 {
-  (void)(walker);
+  (void)(parser);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
@@ -294,7 +294,7 @@ static void fixture_test(int fixture_idx)
     mpack_parser_init(&parser);
     b = buf;
     bl = MIN(cs, sizeof(buf));
-    parser.walker.data = fjson;
+    parser.data = fjson;
     do {
       s = mpack_unparse(&parser, &b, &bl, unparse_enter, unparse_exit);
       if (s) {
@@ -407,8 +407,8 @@ static void unpacking_c1_returns_eread(void)
   size_t inplen = sizeof(input);
   mpack_token_t tok;
   mpack_tokbuf_init(&reader);
-  mpack_walker_t parser;
-  mpack_walker_init(&parser);
+  mpack_parser_t parser;
+  mpack_parser_init(&parser);
   int res = mpack_read(&reader, &inp, &inplen, &tok);
   ok(res == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
@@ -417,7 +417,7 @@ static void very_deep_objects_returns_enomem(void)
 {
   mpack_parser_t parser;
   mpack_parser_init(&parser);
-  parser.walker.capacity = 2;
+  parser.capacity = 2;
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *buf = (const char *)input;
   size_t buflen = sizeof(input);

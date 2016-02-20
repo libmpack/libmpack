@@ -19,27 +19,22 @@ typedef struct mpack_node_s {
   void *data;
 } mpack_node_t;
 
-typedef struct mpack_walker_s {
+typedef struct mpack_parser_s {
   void *data;
   size_t size, capacity;
-  mpack_node_t items[MPACK_MAX_OBJECT_DEPTH + 1];
-} mpack_walker_t;
-
-typedef struct mpack_parser_s {
   int status;
   mpack_tokbuf_t tokbuf;
-  mpack_walker_t walker;
+  mpack_node_t items[MPACK_MAX_OBJECT_DEPTH + 1];
 } mpack_parser_t;
 
-typedef void(*mpack_walk_cb)(mpack_walker_t *w, mpack_node_t *n);
+typedef void(*mpack_walk_cb)(mpack_parser_t *w, mpack_node_t *n);
 
-MPACK_API void mpack_walker_init(mpack_walker_t *w) FUNUSED FNONULL;
 MPACK_API void mpack_parser_init(mpack_parser_t *p) FUNUSED FNONULL;
 
-MPACK_API int mpack_parse_tok(mpack_walker_t *walker, mpack_token_t tok,
+MPACK_API int mpack_parse_tok(mpack_parser_t *walker, mpack_token_t tok,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
   FUNUSED FNONULL_ARG((1,3,4));
-MPACK_API int mpack_unparse_tok(mpack_walker_t *walker, mpack_token_t *tok,
+MPACK_API int mpack_unparse_tok(mpack_parser_t *walker, mpack_token_t *tok,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
   FUNUSED FNONULL_ARG((1,2,3,4));
 
