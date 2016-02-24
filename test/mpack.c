@@ -443,10 +443,118 @@ static void does_not_write_invalid_tokens(void)
       "does not write invalid tokens 2");
 }
 
+#define MSGPACK_BUFLEN 0xff
+
+static void to_msgpack(const char *json, uint8_t **buf)
+{
+  size_t buflen = MSGPACK_BUFLEN;
+  mpack_parser_t parser;
+
+  mpack_parser_init(&parser);
+  parser.data = (char *)json;
+  if (mpack_unparse(&parser, (char **)buf, &buflen, unparse_enter,
+        unparse_exit) != MPACK_OK)
+    abort();
+}
+
+static int reqdata;
+static void rpc_check_outgoing(mpack_rpc_session_t *session,
+    struct rpc_message *m, size_t cs, bool invert)
+{
+  uint8_t buf[MSGPACK_BUFLEN];
+  uint8_t *b = buf;
+  uint8_t rbuf[MSGPACK_BUFLEN];
+  char *ptr = (char *)rbuf;
+  to_msgpack(m->payload + 2, &b);
+
+  int status = MPACK_EOF;
+  while (status == MPACK_EOF) {
+    size_t bl = cs;
+    if (m->type == MPACK_RPC_REQUEST) {
+      status = mpack_rpc_request(session, &ptr, &bl, &reqdata);
+    } else if (m->type == MPACK_RPC_RESPONSE) {
+      status = mpack_rpc_reply(session, &ptr, &bl, m->id);
+    } else if (m->type == MPACK_RPC_NOTIFICATION) {
+      status = mpack_rpc_notify(session, &ptr, &bl);
+    } else abort();
+  }
+  if (m->type == MPACK_RPC_REQUEST) {
+    to_msgpack(m->method, (uint8_t **)&ptr);
+    to_msgpack(m->args, (uint8_t **)&ptr);
+  } else if (m->type == MPACK_RPC_RESPONSE) {
+    to_msgpack(m->error, (uint8_t **)&ptr);
+    to_msgpack(m->result, (uint8_t **)&ptr);
+  } else {
+    to_msgpack(m->method, (uint8_t **)&ptr);
+    to_msgpack(m->args, (uint8_t **)&ptr);
+  }
+  cmp_mem(buf, rbuf, (size_t)((uint8_t *)ptr - rbuf),
+      cs == SIZE_MAX ? "%s: outgoing message matches in a single step" :
+      "%s: outgoing message matches in steps of %zu%s", m->payload, cs,
+      invert ? " (inverted)" : "");
+}
+
+static void rpc_check_incoming(mpack_rpc_session_t *session,
+    struct rpc_message *m, size_t cs, bool invert)
+{
+  uint8_t buf[MSGPACK_BUFLEN];
+  uint8_t *b = buf;
+  uint8_t dbuf[MSGPACK_BUFLEN];
+  uint8_t *db = dbuf;
+  const char *ptr = (const char *)buf;
+  to_msgpack(m->payload + 2, &b);
+  mpack_rpc_message_t msg;
+  int type = MPACK_EOF;
+  while (type == MPACK_EOF) {
+    size_t bl = cs;
+    type = mpack_rpc_receive(session, &ptr, &bl, &msg);
+  }
+  bool result = type == m->type;
+  if (type <= MPACK_RPC_RESPONSE) {
+    result = result && msg.id == m->id;
+    if (type == MPACK_RPC_REQUEST) {
+      to_msgpack(m->method, &db);
+      to_msgpack(m->args, &db);
+    } else if (type == MPACK_RPC_RESPONSE) {
+      to_msgpack(m->error, &db);
+      to_msgpack(m->result, &db);
+      result = result && msg.data == &reqdata;
+    }
+  } else {
+    to_msgpack(m->method, &db);
+    to_msgpack(m->args, &db);
+  }
+  ok(result && !memcmp(dbuf, ptr, (size_t)(db - dbuf)),
+      cs == SIZE_MAX ? "%s: incoming message matches in a single step" :
+      "%s: incoming message matches in steps of %zu%s", m->payload, cs,
+      invert ? " (inverted)" : "");
+}
+
+static void rpc_fixture_test(int fixture_idx)
+{
+  const struct rpc_fixture *fixture = rpc_fixtures + fixture_idx;
+
+  for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
+    for (size_t j = 0; j < 2; j++) { /* test the library from both endpoints */ 
+      mpack_rpc_session_t session;
+      mpack_rpc_session_init(&session, 0);
+      for (size_t k = 0; k < fixture->count; k++) {
+        size_t cs = chunksizes[i];
+        struct rpc_message *msg = fixture->messages + k;
+        if (msg->payload[0] == '<') {
+          if (j)rpc_check_outgoing(&session, msg, cs, j);
+          else rpc_check_incoming(&session, msg, cs, j);
+        } else if (msg->payload[1] == '>') {
+          if (j) rpc_check_incoming(&session, msg, cs, j);
+          else rpc_check_outgoing(&session, msg, cs, j);
+        } else abort();
+      }
+    }
+  }
+}
+
 int main(void)
 {
-  int extra_test_count = 7;
-  plan(fixture_count * (int)ARRAY_SIZE(chunksizes) * 2 + extra_test_count);
   for (int i = 0; i < fixture_count; i++) {
     fixture_test(i);
   }
@@ -455,5 +563,8 @@ int main(void)
   unpacking_c1_returns_eread();
   very_deep_objects_returns_enomem();
   does_not_write_invalid_tokens();
+  for (int i = 0; i < rpc_fixture_count; i++) {
+    rpc_fixture_test(i);
+  }
   done_testing();
 }

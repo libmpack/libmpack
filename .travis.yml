@@ -10,9 +10,9 @@ env:
     - CONFIG=msan
     - CONFIG=ubsan
     - CONFIG=debug
-    - CONFIG=release
-    - CONFIG=amalgamation
-    - CONFIG=release ANSI=1
+    - CONFIG=release CFLAGS=-Werror
+    - CONFIG=amalgamation CFLAGS=-Werror
+    - CONFIG=release ANSI=1 CFLAGS=-Werror
 
 os:
   - linux
@@ -21,7 +21,7 @@ matrix:
   include:
     - os: linux
       compiler: gcc
-      env: CONFIG=release CFLAGS=-m32 LDFLAGS=-m32
+      env: CONFIG=release CFLAGS='-m32 -Werror' LDFLAGS=-m32
       addons:
         apt:
           packages:
@@ -29,7 +29,7 @@ matrix:
     - os: linux
       compiler: gcc
       env:
-        - CONFIG=armeb CFLAGS='-DNDEBUG -g --coverage' LDFLAGS=--coverage
+        - CONFIG=armeb CFLAGS='-DNDEBUG -g --coverage -Werror' LDFLAGS=--coverage
       before_install:
         - pip install --user cpp-coveralls
       after_success:

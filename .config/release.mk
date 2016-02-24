@@ -1,1 +1,1 @@
-XCFLAGS += -O3 -DNDEBUG -Werror
+XCFLAGS += -O3 -DNDEBUG

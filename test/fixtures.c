@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "fixtures.h"
+#include "../src/rpc.h"
 
 static void write_size_be(uint8_t *p, size_t s)
 {
@@ -739,3 +740,63 @@ const struct fixture fixtures[] = {
 };
 
 const int fixture_count = ARRAY_SIZE(fixtures);
+
+const struct rpc_fixture rpc_fixtures[] = {
+#define REQ(p, i, m, a) {                                                    \
+  .payload = p,                                                              \
+  .type = MPACK_RPC_REQUEST,                                                 \
+  .id = i,                                                                   \
+  .method = m,                                                               \
+  .args = a,                                                                 \
+  .error = NULL,                                                             \
+  .result = NULL                                                             \
+}
+#define RES(p, i, e, r) {                                                    \
+  .payload = p,                                                              \
+  .type = MPACK_RPC_RESPONSE,                                                \
+  .id = i,                                                                   \
+  .method = NULL,                                                            \
+  .args = NULL,                                                              \
+  .error = e,                                                                \
+  .result = r                                                                \
+}
+#define NOT(p, m, a) {                                                       \
+  .payload = p,                                                              \
+  .type = MPACK_RPC_NOTIFICATION,                                            \
+  .method = m,                                                               \
+  .args = a,                                                                 \
+  .error = NULL,                                                             \
+  .result = NULL                                                             \
+}
+
+#define S(...) {                                                             \
+  .messages = (struct rpc_message[]){__VA_ARGS__},                           \
+  .count =                                                                   \
+  (sizeof((struct rpc_message[]){__VA_ARGS__})/sizeof(struct rpc_message))   \
+}
+
+  S(
+      REQ("->[0, 0, \"add\", [1, 2]]", 0, "\"add\"", "[1, 2]"),
+      RES("<-[1, 0, null, 3]", 0, "null", "3"),
+      REQ("->[0, 1, \"sub\", [5, 4]]", 1, "\"sub\"", "[5, 4]"),
+      RES("<-[1, 1, null, 1]", 1, "null", "1"),
+   ),
+  S(
+      REQ("<-[0, 0, \"add\", [1, 2]]", 0, "\"add\"", "[1, 2]"),
+      REQ("<-[0, 1, \"sub\", [5, 4]]", 1, "\"sub\"", "[5, 4]"),
+      RES("->[1, 0, null, 3]", 0, "null", "3"),
+      RES("->[1, 1, null, 1]", 1, "null", "1"),
+   ),
+  S(
+      REQ("<-[0, 0, \"add\", [1, 2]]", 0, "\"add\"", "[1, 2]"),
+      NOT("<-[2, \"event\", [\"arg\"]]", "\"event\"", "[\"arg\"]"),
+      REQ("<-[0, 1, \"sub\", [5, 4]]", 1, "\"sub\"", "[5, 4]"),
+      RES("->[1, 1, null, 1]", 1, "null", "1"),
+      NOT("<-[2, \"event\", [\"arg\"]]", "\"event\"", "[\"arg\"]"),
+      RES("->[1, 0, null, 3]", 0, "null", "3"),
+      NOT("<-[2, \"event\", [\"arg\"]]", "\"event\"", "[\"arg\"]"),
+   ),
+
+};
+
+const int rpc_fixture_count = ARRAY_SIZE(rpc_fixtures);

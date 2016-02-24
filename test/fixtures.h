@@ -22,7 +22,25 @@ struct fixture {
   size_t generator_size;
 };
 
+struct rpc_message {
+  char *payload;
+  int type;
+  uint32_t id;
+  char *method;
+  char *args;
+  char *error;
+  char *result;
+};
+
+struct rpc_fixture {
+  struct rpc_message *messages;
+  size_t count;
+};
+
 extern const int fixture_count;
 extern const struct fixture fixtures[];
+
+extern const int rpc_fixture_count;
+extern const struct rpc_fixture rpc_fixtures[];
 
 #endif /* MPACK_TEST_FIXTURES_H */

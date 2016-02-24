@@ -49,7 +49,7 @@ TESTDIR ?= test
 BINDIR  ?= build
 OUTDIR  ?= $(BINDIR)/$(config)
 
-SRC     := core.c conv.c object.c
+SRC     := core.c conv.c object.c rpc.c
 SRC     := $(addprefix $(SRCDIR)/,$(SRC))
 HDRS    := $(SRC:.c=.h)
 OBJ     := $(addprefix $(OUTDIR)/,$(SRC:.c=.lo))
