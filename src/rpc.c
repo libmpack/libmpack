@@ -8,7 +8,6 @@ enum {
   MPACK_RPC_RECEIVE_ID
 };
 
-static int mpack_rpc_validate_hdr(mpack_rpc_header_t *hdr);
 static mpack_rpc_header_t mpack_rpc_request_hdr(void);
 static mpack_rpc_header_t mpack_rpc_reply_hdr(void);
 static mpack_rpc_header_t mpack_rpc_notify_hdr(void);
@@ -37,34 +36,55 @@ MPACK_API int mpack_rpc_receive_tok(mpack_rpc_session_t *session,
   int type;
 
   if (session->receive.index == 0) {
+    if (tok.type != MPACK_TOKEN_ARRAY)
+      /* not an array */
+      return MPACK_RPC_EARRAY;
+
+    if (tok.length < 3 || tok.length > 4)
+      /* invalid array length */
+      return MPACK_RPC_EARRAYL;
+
     session->receive.toks[0] = tok;
     session->receive.index++;
     return MPACK_EOF;  /* get the type */
   }
 
   if (session->receive.index == 1) {
+
+    if (tok.type != MPACK_TOKEN_UINT || tok.length > 1 || tok.data.value.lo > 2)
+      /* invalid type */
+      return MPACK_RPC_ETYPE;
+
+    if (tok.data.value.lo < 2 && session->receive.toks[0].length != 4)
+      /* request or response with array length != 4 */
+      return MPACK_RPC_EARRAYL;
+
+    if (tok.data.value.lo == 2 && session->receive.toks[0].length != 3)
+      /* notification with array length != 3 */
+      return MPACK_RPC_EARRAYL;
+
     session->receive.toks[1] = tok;
     session->receive.index++;
-    if ((type = mpack_rpc_validate_hdr(&session->receive))) goto end;
-    if (session->receive.toks[1].data.value.lo < 2) return MPACK_EOF;
+
+    if (tok.data.value.lo < 2) return MPACK_EOF;
+
     type = MPACK_RPC_NOTIFICATION;
     goto end;
   }
 
   assert(session->receive.index == 2);
   
-  if (tok.type != MPACK_TOKEN_UINT || tok.length > 4) {
-    /* invalid message id */
-    type = MPACK_RPC_EMSGID;
-    goto end;
-  }
+  if (tok.type != MPACK_TOKEN_UINT || tok.length > 4)
+    /* invalid request/response id */
+    return MPACK_RPC_EMSGID;
     
   msg->id = tok.data.value.lo;
   msg->data = NULL;
   type = (int)session->receive.toks[1].data.value.lo + MPACK_RPC_REQUEST;
 
   if (type == MPACK_RPC_RESPONSE && !mpack_rpc_pop(session, msg))
-    type = MPACK_RPC_ERESPID;
+    /* response with invalid id */
+    return MPACK_RPC_ERESPID;
 
 end:
   mpack_rpc_reset_hdr(&session->receive);
@@ -212,32 +232,6 @@ MPACK_API int mpack_rpc_notify(mpack_rpc_session_t *session, char **buf,
   }
 
   return status;
-}
-
-static int mpack_rpc_validate_hdr(mpack_rpc_header_t *hdr)
-{
-  if (hdr->toks[0].type != MPACK_TOKEN_ARRAY)
-    /* not an array */
-    return MPACK_RPC_EARRAY;
-
-  if (hdr->toks[0].length < 3 || hdr->toks[0].length > 4)
-    /* invalid array length */
-    return MPACK_RPC_EARRAYL;
-
-  if (hdr->toks[1].type != MPACK_TOKEN_UINT || hdr->toks[1].length > 1
-      || hdr->toks[1].data.value.lo > 2)
-    /* invalid type */
-    return MPACK_RPC_ETYPE;
-
-  if (hdr->toks[1].data.value.lo < 2 && hdr->toks[0].length != 4)
-    /* request or response with array length != 4 */
-    return MPACK_RPC_EARRAYL;
-
-  if (hdr->toks[1].data.value.lo == 2 && hdr->toks[0].length != 3)
-    /* notification with array length != 3 */
-    return MPACK_RPC_EARRAYL;
-
-  return 0;
 }
 
 static mpack_rpc_header_t mpack_rpc_request_hdr(void)
