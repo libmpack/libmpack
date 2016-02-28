@@ -769,6 +769,15 @@ const struct rpc_fixture rpc_fixtures[] = {
   .result = NULL                                                             \
 }
 
+#define ERR(p, t) {                                                          \
+  .payload = p,                                                              \
+  .type = t,                                                                 \
+  .method = NULL,                                                            \
+  .args = NULL,                                                              \
+  .error = NULL,                                                             \
+  .result = NULL                                                             \
+}
+
 #define S(...) {                                                             \
   .messages = (struct rpc_message[]){__VA_ARGS__},                           \
   .count =                                                                   \
@@ -796,7 +805,21 @@ const struct rpc_fixture rpc_fixtures[] = {
       RES("->[1, 0, null, 3]", 0, "null", "3"),
       NOT("<-[2, \"event\", [\"arg\"]]", "\"event\"", "[\"arg\"]"),
    ),
-
+  /* validation errors */
+  S(ERR("<-1", MPACK_RPC_EARRAY)),
+  S(ERR("<-[0, 0, \"add\", [1, 2], 3]", MPACK_RPC_EARRAYL)),
+  S(ERR("<-[0, 0, \"add\"]", MPACK_RPC_EARRAYL)),
+  S(ERR("<-[1, 0, \"add\", [1, 2], 3]", MPACK_RPC_EARRAYL)),
+  S(ERR("<-[1, 0, \"add\"]", MPACK_RPC_EARRAYL)),
+  S(ERR("<-[2, 0, \"add\", [1, 2]]", MPACK_RPC_EARRAYL)),
+  S(ERR("<-[2, 0]", MPACK_RPC_EARRAYL)),
+  S(ERR("<-[3, 0, 0]", MPACK_RPC_ETYPE)),
+  S(ERR("<-[-1, 0, 0]", MPACK_RPC_ETYPE)),
+  S(ERR("<-[0, 5.323, 0, 0]", MPACK_RPC_EMSGID)),
+  S(ERR("<-[1, 5.323, 0, 0]", MPACK_RPC_EMSGID)),
+  S(ERR("<-[1, 4294967296, 0, 0]", MPACK_RPC_EMSGID)),
+  S(ERR("<-[1, 0, 0, 0]", MPACK_RPC_ERESPID)),
+  S(ERR("<-[1, 4294967295, 0, 0]", MPACK_RPC_ERESPID)),
 };
 
 const int rpc_fixture_count = ARRAY_SIZE(rpc_fixtures);

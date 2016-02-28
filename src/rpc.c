@@ -45,33 +45,30 @@ MPACK_API int mpack_rpc_receive_tok(mpack_rpc_session_t *session,
   if (session->receive.index == 1) {
     session->receive.toks[1] = tok;
     session->receive.index++;
-    if (!mpack_rpc_validate_hdr(&session->receive))
-      goto err;
-    if (session->receive.toks[1].data.value.lo < 2)
-      return MPACK_EOF;  /* get the id */
+    if ((type = mpack_rpc_validate_hdr(&session->receive))) goto end;
+    if (session->receive.toks[1].data.value.lo < 2) return MPACK_EOF;
     type = MPACK_RPC_NOTIFICATION;
     goto end;
   }
 
   assert(session->receive.index == 2);
   
-  if (tok.type != MPACK_TOKEN_UINT || tok.length > 4)
+  if (tok.type != MPACK_TOKEN_UINT || tok.length > 4) {
     /* invalid message id */
-    goto err;
+    type = MPACK_RPC_EMSGID;
+    goto end;
+  }
     
   msg->id = tok.data.value.lo;
   msg->data = NULL;
   type = (int)session->receive.toks[1].data.value.lo + MPACK_RPC_REQUEST;
 
-  if (type == MPACK_RPC_RESPONSE && !mpack_rpc_pop(session, msg)) goto err;
+  if (type == MPACK_RPC_RESPONSE && !mpack_rpc_pop(session, msg))
+    type = MPACK_RPC_ERESPID;
 
 end:
   mpack_rpc_reset_hdr(&session->receive);
   return type;
-
-err:
-  type = MPACK_RPC_ERROR;
-  goto end;
 }
 
 MPACK_API int mpack_rpc_request_tok(mpack_rpc_session_t *session, 
@@ -219,24 +216,28 @@ MPACK_API int mpack_rpc_notify(mpack_rpc_session_t *session, char **buf,
 
 static int mpack_rpc_validate_hdr(mpack_rpc_header_t *hdr)
 {
-  if (hdr->toks[0].type != MPACK_TOKEN_ARRAY || hdr->toks[0].length < 3)
+  if (hdr->toks[0].type != MPACK_TOKEN_ARRAY)
     /* not an array */
-    return MPACK_RPC_ERROR;
+    return MPACK_RPC_EARRAY;
+
+  if (hdr->toks[0].length < 3 || hdr->toks[0].length > 4)
+    /* invalid array length */
+    return MPACK_RPC_EARRAYL;
 
   if (hdr->toks[1].type != MPACK_TOKEN_UINT || hdr->toks[1].length > 1
       || hdr->toks[1].data.value.lo > 2)
     /* invalid type */
-    return MPACK_RPC_ERROR;
+    return MPACK_RPC_ETYPE;
 
   if (hdr->toks[1].data.value.lo < 2 && hdr->toks[0].length != 4)
     /* request or response with array length != 4 */
-    return MPACK_RPC_ERROR;
+    return MPACK_RPC_EARRAYL;
 
   if (hdr->toks[1].data.value.lo == 2 && hdr->toks[0].length != 3)
     /* notification with array length != 3 */
-    return MPACK_RPC_ERROR;
+    return MPACK_RPC_EARRAYL;
 
-  return 1;
+  return 0;
 }
 
 static mpack_rpc_header_t mpack_rpc_request_hdr(void)
