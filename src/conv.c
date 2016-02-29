@@ -1,7 +1,8 @@
 #include "conv.h"
-#include <math.h>
 
 static int mpack_is_be(void) FPURE;
+static double mpack_fmod_pow2_32(double a);
+
 
 #define POW2(n) \
   ((double)(1 << (n / 2)) * (double)(1 << (n / 2)) * (double)(1 << (n % 2)))
@@ -52,7 +53,6 @@ MPACK_API mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
   return mpack_pack_uint((mpack_uintmax_t)v);
 }
 
-
 MPACK_API mpack_token_t mpack_pack_float_as_int(double v)
 {
   mpack_token_t tok;
@@ -60,7 +60,7 @@ MPACK_API mpack_token_t mpack_pack_float_as_int(double v)
   assert(v <= 9007199254740991. && v >= -9007199254740991.);
   vabs = v < 0 ? -v : v;
   tok.data.value.hi = (mpack_uint32_t)(vabs / POW2(32));
-  tok.data.value.lo = (mpack_uint32_t)fmod(vabs, POW2(32));
+  tok.data.value.lo = (mpack_uint32_t)mpack_fmod_pow2_32(vabs);
   if (v < 0) {
     /* Compute the two's complement */
     tok.type = MPACK_TOKEN_SINT;
@@ -326,3 +326,9 @@ static int mpack_is_be(void)
   return test.c[0] == 0;
 }
 
+/* this simplified version of `fmod` that returns the remainder of double
+ * division by 0xffffffff, which is enough for our purposes */
+static double mpack_fmod_pow2_32(double a)
+{
+  return a - ((double)(mpack_uint32_t)(a / POW2(32)) * POW2(32));
+}
