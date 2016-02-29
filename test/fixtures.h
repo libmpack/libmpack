@@ -40,6 +40,9 @@ struct rpc_fixture {
 extern const int fixture_count;
 extern const struct fixture fixtures[];
 
+extern const int number_fixture_count;
+extern const struct fixture number_fixtures[];
+
 extern const int rpc_fixture_count;
 extern const struct rpc_fixture rpc_fixtures[];
 

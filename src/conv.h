@@ -24,6 +24,7 @@ MPACK_API mpack_token_t mpack_pack_uint(mpack_uintmax_t v) FUNUSED FPURE;
 MPACK_API mpack_token_t mpack_pack_sint(mpack_sintmax_t v) FUNUSED FPURE;
 MPACK_API mpack_token_t mpack_pack_float_compat(double v) FUNUSED FPURE;
 MPACK_API mpack_token_t mpack_pack_float_fast(double v) FUNUSED FPURE;
+MPACK_API mpack_token_t mpack_pack_number(double v) FUNUSED FPURE;
 MPACK_API mpack_token_t mpack_pack_chunk(const char *p, mpack_uint32_t l)
   FUNUSED FPURE FNONULL;
 MPACK_API mpack_token_t mpack_pack_str(mpack_uint32_t l) FUNUSED FPURE;
@@ -37,7 +38,7 @@ MPACK_API mpack_uintmax_t mpack_unpack_uint(mpack_token_t t) FUNUSED FPURE;
 MPACK_API mpack_sintmax_t mpack_unpack_sint(mpack_token_t t) FUNUSED FPURE;
 MPACK_API double mpack_unpack_float_fast(mpack_token_t t) FUNUSED FPURE;
 MPACK_API double mpack_unpack_float_compat(mpack_token_t t) FUNUSED FPURE;
-MPACK_API mpack_token_t mpack_pack_float_as_int(double v) FUNUSED FPURE;
+MPACK_API double mpack_unpack_number(mpack_token_t t) FUNUSED FPURE;
 
 /* The mpack_{pack,unpack}_float_fast functions should work in 99% of the
  * platforms. When compiling for a platform where floats don't use ieee754 as

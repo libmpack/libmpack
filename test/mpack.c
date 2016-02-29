@@ -32,6 +32,7 @@
 
 static char buf[0xffffff];
 static size_t bufpos;
+static bool number_conv = false;
 
 static void w(const char *fmt, ...)
 {
@@ -104,20 +105,21 @@ static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
       memcpy(tmp, p, l);
       tmp[l] = 0;
       p = p2;
-      if (strchr(tmp, '.') || strchr(tmp, 'e')) {
-        node->tok = mpack_pack_float_fast(d);
-        {
-          /* test both pack_float implementations */
-          mpack_token_t tok = mpack_pack_float_compat(d);
-          (void)(tok);
-          assert(node->tok.data.value.lo == tok.data.value.lo &&
-              node->tok.data.value.hi == tok.data.value.hi);
-        }
+      if (number_conv) {
+        node->tok = mpack_pack_number(d);
       } else {
-        if (d > 9007199254740991. || d < -9007199254740991.)
+        if (strchr(tmp, '.') || strchr(tmp, 'e')) {
+          node->tok = mpack_pack_float_fast(d);
+          {
+            /* test both pack_float implementations */
+            mpack_token_t tok = mpack_pack_float_compat(d);
+            (void)(tok);
+            assert(node->tok.data.value.lo == tok.data.value.lo &&
+                node->tok.data.value.hi == tok.data.value.hi);
+          }
+        } else {
           node->tok = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
-        else
-          node->tok = mpack_pack_float_as_int(d);
+        }
       }
       break;
     }
@@ -191,10 +193,13 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     case MPACK_TOKEN_BOOLEAN:
       w(mpack_unpack_boolean(*t) ? "true" : "false"); break;
     case MPACK_TOKEN_UINT:
+      if (number_conv) goto nconv;
       w("%" UFORMAT, mpack_unpack_uint(*t)); break;
     case MPACK_TOKEN_SINT:
+      if (number_conv) goto nconv;
       w("%" SFORMAT, mpack_unpack_sint(*t)); break;
     case MPACK_TOKEN_FLOAT: {
+      if (number_conv) goto nconv;
       /* test both unpack_float implementations */
       double d = mpack_unpack_float_fast(*t),d2 = mpack_unpack_float_compat(*t);
       (void)(d2);
@@ -225,6 +230,12 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     case MPACK_TOKEN_MAP:
       w("{"); break;
   }
+  return;
+
+  double d;
+nconv:
+  d = mpack_unpack_number(*t);
+  w("%.*g", 17, d);
 }
 
 static void parse_exit(mpack_parser_t *parser, mpack_node_t *node)
@@ -255,9 +266,9 @@ static void parse_exit(mpack_parser_t *parser, mpack_node_t *node)
  * chunks of different sizes. */
 static const size_t chunksizes[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, SIZE_MAX};
 
-static void fixture_test(int fixture_idx)
+static void fixture_test(const struct fixture *ff, int fixture_idx)
 {
-  const struct fixture *f = fixtures + fixture_idx;
+  const struct fixture *f = ff + fixture_idx;
   char *fjson;
   uint8_t *fmsgpack;
   size_t fmsgpacklen;
@@ -575,15 +586,20 @@ static void rpc_fixture_test(int fixture_idx)
 int main(void)
 {
   for (int i = 0; i < fixture_count; i++) {
-    fixture_test(i);
+    fixture_test(fixtures, i);
   }
   signed_positive_packs_with_unsigned_format();
   positive_signed_format_unpacks_as_unsigned();
   unpacking_c1_returns_eread();
   very_deep_objects_returns_enomem();
   does_not_write_invalid_tokens();
+  number_conv = true;  /* test using mpack_{pack,unpack}_number to do the
+                          numeric conversions */
   for (int i = 0; i < rpc_fixture_count; i++) {
     rpc_fixture_test(i);
+  }
+  for (int i = 0; i < number_fixture_count; i++) {
+    fixture_test(number_fixtures, i);
   }
   done_testing();
 }
