@@ -37,6 +37,7 @@ MPACK_API mpack_uintmax_t mpack_unpack_uint(mpack_token_t t) FUNUSED FPURE;
 MPACK_API mpack_sintmax_t mpack_unpack_sint(mpack_token_t t) FUNUSED FPURE;
 MPACK_API double mpack_unpack_float_fast(mpack_token_t t) FUNUSED FPURE;
 MPACK_API double mpack_unpack_float_compat(mpack_token_t t) FUNUSED FPURE;
+MPACK_API mpack_token_t mpack_pack_float_as_int(double v) FUNUSED FPURE;
 
 /* The mpack_{pack,unpack}_float_fast functions should work in 99% of the
  * platforms. When compiling for a platform where floats don't use ieee754 as

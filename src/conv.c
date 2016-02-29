@@ -1,4 +1,5 @@
 #include "conv.h"
+#include <math.h>
 
 static int mpack_is_be(void) FPURE;
 
@@ -51,7 +52,28 @@ MPACK_API mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
   return mpack_pack_uint((mpack_uintmax_t)v);
 }
 
-MPACK_API mpack_value_t pack_ieee754(double v, unsigned mantbits,
+
+MPACK_API mpack_token_t mpack_pack_float_as_int(double v)
+{
+  mpack_token_t tok;
+  double vabs;
+  assert(v <= 9007199254740991. && v >= -9007199254740991.);
+  vabs = v < 0 ? -v : v;
+  tok.data.value.hi = (mpack_uint32_t)(vabs / POW2(32));
+  tok.data.value.lo = (mpack_uint32_t)fmod(vabs, POW2(32));
+  if (v < 0) {
+    /* Compute the two's complement */
+    tok.type = MPACK_TOKEN_SINT;
+    tok.data.value.hi = ~tok.data.value.hi;
+    tok.data.value.lo = ~tok.data.value.lo + 1;
+    if (!tok.data.value.lo) tok.data.value.hi++;
+  } else {
+    tok.type = MPACK_TOKEN_UINT;
+  }
+  return tok;
+}
+
+static mpack_value_t mpack_pack_ieee754(double v, unsigned mantbits,
     unsigned expbits)
 {
   mpack_value_t rv = {0, 0};
@@ -107,10 +129,10 @@ MPACK_API mpack_token_t mpack_pack_float_compat(double v)
 
   if (fits_single(v)) {
     rv.length = 4;
-    rv.data.value = pack_ieee754(v, 23, 8);
+    rv.data.value = mpack_pack_ieee754(v, 23, 8);
   } else {
     rv.length = 8;
-    rv.data.value = pack_ieee754(v, 52, 11);
+    rv.data.value = mpack_pack_ieee754(v, 52, 11);
   }
 
   rv.type = MPACK_TOKEN_FLOAT;

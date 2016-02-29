@@ -114,7 +114,10 @@ static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
               node->tok.data.value.hi == tok.data.value.hi);
         }
       } else {
-        node->tok = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
+        if (d > 9007199254740991. || d < -9007199254740991.)
+          node->tok = mpack_pack_sint((mpack_sintmax_t)strtoll(tmp, NULL, 10));
+        else
+          node->tok = mpack_pack_float_as_int(d);
       }
       break;
     }
