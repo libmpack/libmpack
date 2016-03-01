@@ -567,7 +567,7 @@ static void rpc_fixture_test(int fixture_idx)
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     for (size_t j = 0; j < 2; j++) { /* test the library from both endpoints */ 
       mpack_rpc_session_t session;
-      mpack_rpc_session_init(&session, 0);
+      mpack_rpc_session_init(&session, fixture->capacity);
       for (size_t k = 0; k < fixture->count; k++) {
         size_t cs = chunksizes[i];
         struct rpc_message *msg = fixture->messages + k;

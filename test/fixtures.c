@@ -963,7 +963,10 @@ const struct rpc_fixture rpc_fixtures[] = {
   .result = NULL                                                             \
 }
 
-#define S(...) {                                                             \
+#define S(...) SC(0, __VA_ARGS__)
+
+#define SC(c, ...) {                                                         \
+  .capacity = c,                                                             \
   .messages = (struct rpc_message[]){__VA_ARGS__},                           \
   .count =                                                                   \
   (sizeof((struct rpc_message[]){__VA_ARGS__})/sizeof(struct rpc_message))   \
@@ -1005,6 +1008,30 @@ const struct rpc_fixture rpc_fixtures[] = {
   S(ERR("<-[1, 4294967296, 0, 0]", MPACK_RPC_EMSGID)),
   S(ERR("<-[1, 0, 0, 0]", MPACK_RPC_ERESPID)),
   S(ERR("<-[1, 4294967295, 0, 0]", MPACK_RPC_ERESPID)),
+  /* hash table tests */
+  SC(2,
+      REQ("->[0, 0, \"add\", [1, 2]]", 0, "\"add\"", "[1, 2]"),
+      REQ("->[0, 1, \"sub\", [1, 2]]", 1, "\"sub\"", "[1, 2]"),
+      RES("<-[1, 1, null, -1]", 1, "null", "-1"),
+      RES("<-[1, 0, null, 3]", 0, "null", "3"),
+    ),
+  SC(5,
+      REQ("->[0, 0, \"m1\", []]", 0, "\"m1\"", "[]"),
+      REQ("->[0, 1, \"m2\", []]", 1, "\"m2\"", "[]"),
+      REQ("->[0, 2, \"m3\", []]", 2, "\"m3\"", "[]"),
+      REQ("->[0, 3, \"m4\", []]", 3, "\"m4\"", "[]"),
+      RES("<-[1, 1, null, null]", 1, "null", "null"),
+      RES("<-[1, 2, null, null]", 2, "null", "null"),
+      RES("<-[1, 0, null, null]", 0, "null", "null"),
+      RES("<-[1, 3, null, null]", 3, "null", "null"),
+      REQ("->[0, 4, \"m1\", []]", 4, "\"m1\"", "[]"),
+      REQ("->[0, 5, \"m2\", []]", 5, "\"m2\"", "[]"),
+      REQ("->[0, 6, \"m3\", []]", 6, "\"m3\"", "[]"),
+      RES("<-[1, 6, null, null]", 6, "null", "null"),
+      RES("<-[1, 4, null, null]", 4, "null", "null"),
+      RES("<-[1, 5, null, null]", 5, "null", "null"),
+    ),
+
 };
 
 const int rpc_fixture_count = ARRAY_SIZE(rpc_fixtures);

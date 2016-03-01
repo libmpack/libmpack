@@ -106,7 +106,8 @@ MPACK_API int mpack_rpc_request_tok(mpack_rpc_session_t *session,
     *tok = session->send.toks[0];
     session->send.index++;
     status = mpack_rpc_put(session, msg);
-    if (status == -1) return MPACK_NOMEM;
+    if (status == -1)
+      return MPACK_NOMEM;
     assert(status);
     return MPACK_EOF;
   }
@@ -268,7 +269,6 @@ static struct mpack_rpc_bucket_s *mpack_rpc_search(mpack_rpc_session_t *session,
 {
   mpack_uint32_t i;
   mpack_uint32_t idx = msg_id % session->capacity;
-  assert(session->capacity % 2 == 0);
 
   for (i = 0; i < session->capacity; i++) {
     if (!session->pool[idx].used || session->pool[idx].msg.id == msg_id)
@@ -299,26 +299,19 @@ static int mpack_rpc_pop(mpack_rpc_session_t *session, mpack_rpc_message_t *msg)
   *msg = bucket->msg;
   bucket->used = 0;
   idx = (mpack_uint32_t)(bucket - session->pool);
-  next = idx;
+  next = (idx + 1) % session->capacity;
 
   for (;;) {
-    struct mpack_rpc_bucket_s *next_bucket;
-    next = (next + 1) % session->capacity;
-    next_bucket = session->pool + next;
+    struct mpack_rpc_bucket_s *next_bucket = session->pool + next;
     if (!next_bucket->used) {
       /* found empty bucket, finished deleting */
       break;
     } else if (next_bucket->msg.id % session->capacity <= idx) {
-      /* found a bucket with index less than or equal to the one just removed.
-       * shift it to the removed position and repeat the search for the newly
-       * removed bucket. more details in:
-       * https://en.wikipedia.org/wiki/Linear_probing#Deletion) */
-      *bucket = *next_bucket;
-      bucket = next_bucket;
-      bucket->used = 0;
-      idx = (mpack_uint32_t)(bucket - session->pool);
-      next = idx;
+      mpack_rpc_message_t m = next_bucket->msg;
+      next_bucket->used = 0;
+      mpack_rpc_put(session, m);
     }
+    next = (next + 1) % session->capacity;
   };
 
   return 1;

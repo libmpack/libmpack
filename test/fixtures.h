@@ -35,6 +35,7 @@ struct rpc_message {
 struct rpc_fixture {
   struct rpc_message *messages;
   size_t count;
+  size_t capacity;
 };
 
 extern const int fixture_count;
