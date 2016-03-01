@@ -1008,6 +1008,11 @@ const struct rpc_fixture rpc_fixtures[] = {
   S(ERR("<-[1, 4294967296, 0, 0]", MPACK_RPC_EMSGID)),
   S(ERR("<-[1, 0, 0, 0]", MPACK_RPC_ERESPID)),
   S(ERR("<-[1, 4294967295, 0, 0]", MPACK_RPC_ERESPID)),
+  SC(2,
+      REQ("->[0, 0, \"m\", []]", 0, "\"m\"", "[]"),
+      REQ("->[0, 1, \"m\", []]", 1, "\"m\"", "[]"),
+      ERR("->[0, 2, \"m\", []]", MPACK_NOMEM),
+    ),
   /* hash table tests */
   SC(2,
       REQ("->[0, 0, \"add\", [1, 2]]", 0, "\"add\"", "[1, 2]"),

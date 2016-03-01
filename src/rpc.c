@@ -190,6 +190,7 @@ MPACK_API int mpack_rpc_request(mpack_rpc_session_t *session, char **buf,
     if (!session->writer.plen) {
       status = mpack_rpc_request_tok(session, &tok, data);
     }
+    if (status == MPACK_NOMEM) break;
     write_status = mpack_write(&session->writer, buf, buflen, &tok);
     status = write_status ? write_status : status;
   }

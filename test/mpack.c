@@ -466,9 +466,7 @@ static void to_msgpack(const char *json, uint8_t **buf)
 
   mpack_parser_init(&parser);
   parser.data = (char *)json;
-  if (mpack_unparse(&parser, (char **)buf, &buflen, unparse_enter,
-        unparse_exit) != MPACK_OK)
-    abort();
+  if (mpack_unparse(&parser, (char **)buf, &buflen, unparse_enter, unparse_exit) != MPACK_OK) abort();
 }
 
 static int reqdata;
@@ -484,16 +482,13 @@ static void rpc_check_outgoing(mpack_rpc_session_t *session,
   int status = MPACK_EOF;
   while (status == MPACK_EOF) {
     size_t bl = cs;
-    if (m->type == MPACK_RPC_REQUEST) {
+    if (m->type == MPACK_RPC_REQUEST || m->payload[3] == '0') {
       status = mpack_rpc_request(session, &ptr, &bl, &reqdata);
-    } else if (m->type == MPACK_RPC_RESPONSE) {
+    } else if (m->type == MPACK_RPC_RESPONSE || m->payload[3] == '1') {
       status = mpack_rpc_reply(session, &ptr, &bl, m->id);
-    } else if (m->type == MPACK_RPC_NOTIFICATION) {
+    } else if (m->type == MPACK_RPC_NOTIFICATION || m->payload[3] == '2') {
       status = mpack_rpc_notify(session, &ptr, &bl);
-    } else if (!invert) {
-      ok(status == m->type, "%s: expected error matched", m->payload);
-      return;
-    } else return;  /* testing error, disregard the invert flag */
+    } else return; /* inverted error checking, return */
   }
   if (m->type == MPACK_RPC_REQUEST) {
     to_msgpack(m->method, (uint8_t **)&ptr);
@@ -501,9 +496,13 @@ static void rpc_check_outgoing(mpack_rpc_session_t *session,
   } else if (m->type == MPACK_RPC_RESPONSE) {
     to_msgpack(m->error, (uint8_t **)&ptr);
     to_msgpack(m->result, (uint8_t **)&ptr);
-  } else {
+  } else if (m->type == MPACK_RPC_NOTIFICATION) {
     to_msgpack(m->method, (uint8_t **)&ptr);
     to_msgpack(m->args, (uint8_t **)&ptr);
+  } else {
+    if (!invert)
+      ok(status == m->type, "%s: expected error matched", m->payload);
+    return;
   }
   cmp_mem(buf, rbuf, (size_t)((uint8_t *)ptr - rbuf),
       cs == SIZE_MAX ? "%s: outgoing message matches in a single step" :
@@ -535,25 +534,28 @@ static void rpc_check_incoming(mpack_rpc_session_t *session,
     size_t bl = cs;
     type = mpack_rpc_receive(session, &ptr, &bl, &msg);
   }
-  bool result = type == m->type;
-  if (type == MPACK_RPC_REQUEST) {
-    result = result && msg.id == m->id;
+  bool result;
+  if (m->type == MPACK_RPC_REQUEST) {
+    result = msg.id == m->id;
     to_msgpack(m->method, &db);
     to_msgpack(m->args, &db);
-  } else if (type == MPACK_RPC_RESPONSE) {
+  } else if (m->type == MPACK_RPC_RESPONSE) {
     to_msgpack(m->error, &db);
     to_msgpack(m->result, &db);
-    result = result && msg.id == m->id;
-    result = result && msg.data == &reqdata;
-  } else if (type == MPACK_RPC_NOTIFICATION) {
+    result = msg.id == m->id;
+    result = msg.data == &reqdata;
+  } else if (m->type == MPACK_RPC_NOTIFICATION) {
+    result = true;
     to_msgpack(m->method, &db);
     to_msgpack(m->args, &db);
-  } else if (!invert) {
-    ok(type == m->type, "%s: expected error matched(%s)", m->payload,
-        get_error_string(type));
+  } else {
+    if (!invert)
+      ok(type == m->type, "%s: expected error matched(%s)", m->payload,
+          get_error_string(type));
     return;
-  } else return;  /* testing error, disregard the invert flag */
+  }
 
+  result = result && type == m->type;
   ok(result && !memcmp(dbuf, ptr, (size_t)(db - dbuf)),
       cs == SIZE_MAX ? "%s: incoming message matches in a single step" :
       "%s: incoming message matches in steps of %zu%s", m->payload, cs,
@@ -577,7 +579,7 @@ static void rpc_fixture_test(int fixture_idx)
         } else if (msg->payload[1] == '>') {
           if (j) rpc_check_incoming(&session, msg, cs, j);
           else rpc_check_outgoing(&session, msg, cs, j);
-        } else abort();
+        }
       }
     }
   }
