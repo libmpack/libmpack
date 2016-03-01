@@ -15,17 +15,16 @@ static int mpack_rpc_put(mpack_rpc_session_t *s, mpack_rpc_message_t m);
 static int mpack_rpc_pop(mpack_rpc_session_t *s, mpack_rpc_message_t *m);
 static void mpack_rpc_reset_hdr(mpack_rpc_header_t *hdr);
 
-MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *session,
-    mpack_uint32_t capacity)
+MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *session)
 {
-  session->capacity = capacity ? capacity : MPACK_RPC_POOL_CAPACITY;
+  session->capacity = MPACK_RPC_MAX_REQUESTS;
   session->request_id = 0;
   mpack_tokbuf_init(&session->reader);
   mpack_tokbuf_init(&session->writer);
   mpack_rpc_reset_hdr(&session->receive);
   mpack_rpc_reset_hdr(&session->send);
-  memset(session->pool, 0,
-      sizeof(struct mpack_rpc_bucket_s) * session->capacity);
+  memset(session->slots, 0,
+      sizeof(struct mpack_rpc_slot_s) * session->capacity);
 }
 
 MPACK_API int mpack_rpc_receive_tok(mpack_rpc_session_t *session,
@@ -265,43 +264,43 @@ static mpack_rpc_header_t mpack_rpc_notify_hdr(void)
 
 static int mpack_rpc_put(mpack_rpc_session_t *session, mpack_rpc_message_t msg)
 {
-  struct mpack_rpc_bucket_s *bucket = NULL;
+  struct mpack_rpc_slot_s *slot = NULL;
   mpack_uint32_t i;
   mpack_uint32_t hash = msg.id % session->capacity;
 
   for (i = 0; i < session->capacity; i++) {
-    if (!session->pool[hash].used || session->pool[hash].msg.id == msg.id) {
-      bucket = session->pool + hash;
+    if (!session->slots[hash].used || session->slots[hash].msg.id == msg.id) {
+      slot = session->slots + hash;
       break;
     }
     hash = hash > 0 ? hash - 1 : session->capacity - 1;
   }
 
-  if (!bucket) return -1; /* no space */
-  if (bucket->msg.id == msg.id && bucket->used) return 0;  /* duplicate key */
-  bucket->msg = msg;
-  bucket->used = 1;
+  if (!slot) return -1; /* no space */
+  if (slot->msg.id == msg.id && slot->used) return 0;  /* duplicate key */
+  slot->msg = msg;
+  slot->used = 1;
   return 1;
 }
 
 static int mpack_rpc_pop(mpack_rpc_session_t *session, mpack_rpc_message_t *msg)
 {
-  struct mpack_rpc_bucket_s *bucket = NULL;
+  struct mpack_rpc_slot_s *slot = NULL;
   mpack_uint32_t i;
   mpack_uint32_t hash = msg->id % session->capacity;
 
   for (i = 0; i < session->capacity; i++) {
-    if (session->pool[hash].used && session->pool[hash].msg.id == msg->id) {
-      bucket = session->pool + hash;
+    if (session->slots[hash].used && session->slots[hash].msg.id == msg->id) {
+      slot = session->slots + hash;
       break;
     }
     hash = hash > 0 ? hash - 1 : session->capacity - 1;
   }
   
-  if (!bucket) return 0;
+  if (!slot) return 0;
 
-  *msg = bucket->msg;
-  bucket->used = 0;
+  *msg = slot->msg;
+  slot->used = 0;
 
   return 1;
 }

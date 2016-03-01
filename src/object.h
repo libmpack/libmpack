@@ -19,14 +19,16 @@ typedef struct mpack_node_s {
   void *data;
 } mpack_node_t;
 
-typedef struct mpack_parser_s {
-  void *data;
-  size_t size, capacity;
-  int status;
-  mpack_tokbuf_t tokbuf;
-  mpack_node_t items[MPACK_MAX_OBJECT_DEPTH + 1];
-} mpack_parser_t;
+#define MPACK_PARSER_STRUCT(c)    \
+  struct mpack_parser_##c##_s {   \
+    void *data;                   \
+    size_t size, capacity;        \
+    int status;                   \
+    mpack_tokbuf_t tokbuf;        \
+    mpack_node_t items[c + 1];    \
+  }
 
+typedef MPACK_PARSER_STRUCT(MPACK_MAX_OBJECT_DEPTH) mpack_parser_t;
 typedef void(*mpack_walk_cb)(mpack_parser_t *w, mpack_node_t *n);
 
 MPACK_API void mpack_parser_init(mpack_parser_t *p) FUNUSED FNONULL;

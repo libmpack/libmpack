@@ -4,8 +4,8 @@
 #include "core.h"
 #include "object.h"
 
-#ifndef MPACK_RPC_POOL_CAPACITY
-# define MPACK_RPC_POOL_CAPACITY 32
+#ifndef MPACK_RPC_MAX_REQUESTS
+# define MPACK_RPC_MAX_REQUESTS 32
 #endif
 
 enum {
@@ -33,18 +33,22 @@ typedef struct mpack_rpc_message_s {
   void *data;
 } mpack_rpc_message_t;
 
-typedef struct mpack_rpc_session_s {
-  mpack_tokbuf_t reader, writer;
-  mpack_rpc_header_t receive, send;
-  mpack_uint32_t request_id, capacity;
-  struct mpack_rpc_bucket_s {
-    int used;
-    mpack_rpc_message_t msg;
-  } pool[MPACK_RPC_POOL_CAPACITY];
-} mpack_rpc_session_t;
+struct mpack_rpc_slot_s {
+  int used;
+  mpack_rpc_message_t msg;
+};
 
-MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *s, mpack_uint32_t c)
-  FUNUSED FNONULL;
+#define MPACK_RPC_SESSION_STRUCT(c)      \
+  struct mpack_rpc_session_##c##_s {     \
+    mpack_tokbuf_t reader, writer;       \
+    mpack_rpc_header_t receive, send;    \
+    mpack_uint32_t request_id, capacity; \
+    struct mpack_rpc_slot_s slots[c];   \
+  }
+
+typedef MPACK_RPC_SESSION_STRUCT(MPACK_RPC_MAX_REQUESTS) mpack_rpc_session_t;
+
+MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *s) FUNUSED FNONULL;
 
 MPACK_API int mpack_rpc_receive_tok(mpack_rpc_session_t *s, mpack_token_t t,
     mpack_rpc_message_t *msg) FUNUSED FNONULL;
