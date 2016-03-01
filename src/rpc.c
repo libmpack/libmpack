@@ -11,8 +11,6 @@ enum {
 static mpack_rpc_header_t mpack_rpc_request_hdr(void);
 static mpack_rpc_header_t mpack_rpc_reply_hdr(void);
 static mpack_rpc_header_t mpack_rpc_notify_hdr(void);
-static struct mpack_rpc_bucket_s *mpack_rpc_search(mpack_rpc_session_t *session,
-    mpack_uint32_t msg_id);
 static int mpack_rpc_put(mpack_rpc_session_t *s, mpack_rpc_message_t m);
 static int mpack_rpc_pop(mpack_rpc_session_t *s, mpack_rpc_message_t *m);
 static void mpack_rpc_reset_hdr(mpack_rpc_header_t *hdr);
@@ -264,24 +262,20 @@ static mpack_rpc_header_t mpack_rpc_notify_hdr(void)
   return hdr;
 }
 
-static struct mpack_rpc_bucket_s *mpack_rpc_search(mpack_rpc_session_t *session,
-    mpack_uint32_t msg_id)
-{
-  mpack_uint32_t i;
-  mpack_uint32_t idx = msg_id % session->capacity;
-
-  for (i = 0; i < session->capacity; i++) {
-    if (!session->pool[idx].used || session->pool[idx].msg.id == msg_id)
-      return session->pool + idx;
-    idx = (idx + 1) % session->capacity;
-  }
-
-  return NULL;
-}
-
 static int mpack_rpc_put(mpack_rpc_session_t *session, mpack_rpc_message_t msg)
 {
-  struct mpack_rpc_bucket_s *bucket = mpack_rpc_search(session, msg.id);
+  struct mpack_rpc_bucket_s *bucket = NULL;
+  mpack_uint32_t i;
+  mpack_uint32_t hash = msg.id % session->capacity;
+
+  for (i = 0; i < session->capacity; i++) {
+    if (!session->pool[hash].used || session->pool[hash].msg.id == msg.id) {
+      bucket = session->pool + hash;
+      break;
+    }
+    hash = hash > 0 ? hash - 1 : session->capacity - 1;
+  }
+
   if (!bucket) return -1; /* no space */
   if (bucket->msg.id == msg.id && bucket->used) return 0;  /* duplicate key */
   bucket->msg = msg;
@@ -291,28 +285,22 @@ static int mpack_rpc_put(mpack_rpc_session_t *session, mpack_rpc_message_t msg)
 
 static int mpack_rpc_pop(mpack_rpc_session_t *session, mpack_rpc_message_t *msg)
 {
-  mpack_uint32_t idx, next;
-  struct mpack_rpc_bucket_s *bucket = mpack_rpc_search(session, msg->id);
+  struct mpack_rpc_bucket_s *bucket = NULL;
+  mpack_uint32_t i;
+  mpack_uint32_t hash = msg->id % session->capacity;
+
+  for (i = 0; i < session->capacity; i++) {
+    if (session->pool[hash].used && session->pool[hash].msg.id == msg->id) {
+      bucket = session->pool + hash;
+      break;
+    }
+    hash = hash > 0 ? hash - 1 : session->capacity - 1;
+  }
   
-  if (!bucket || !bucket->used) return 0;
+  if (!bucket) return 0;
 
   *msg = bucket->msg;
   bucket->used = 0;
-  idx = (mpack_uint32_t)(bucket - session->pool);
-  next = (idx + 1) % session->capacity;
-
-  for (;;) {
-    struct mpack_rpc_bucket_s *next_bucket = session->pool + next;
-    if (!next_bucket->used) {
-      /* found empty bucket, finished deleting */
-      break;
-    } else if (next_bucket->msg.id % session->capacity <= idx) {
-      mpack_rpc_message_t m = next_bucket->msg;
-      next_bucket->used = 0;
-      mpack_rpc_put(session, m);
-    }
-    next = (next + 1) % session->capacity;
-  };
 
   return 1;
 }
