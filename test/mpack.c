@@ -475,7 +475,7 @@ static void to_msgpack(const char *json, uint8_t **buf)
   if (mpack_unparse(&parser, (char **)buf, &buflen, unparse_enter, unparse_exit) != MPACK_OK) abort();
 }
 
-static void copy_session_maintains_state(void)
+static void rpc_copy_session_maintains_state(void)
 {
   int d1, d2, d3;
   mpack_rpc_session_t *s2 = malloc(sizeof(MPACK_RPC_SESSION_STRUCT(2)));
@@ -507,6 +507,23 @@ static void copy_session_maintains_state(void)
   ok(mpack_rpc_receive(s3, &b, &bl, &msg) == MPACK_RPC_RESPONSE);
   free(s2);
   free(s3);
+}
+
+static void rpc_request_id_wrap(void)
+{
+  mpack_rpc_session_t session;
+  mpack_rpc_session_init(&session, 0);
+  mpack_token_t tok;
+  /* produce request 0 */
+  while (mpack_rpc_request_tok(&session, &tok, NULL) != MPACK_OK);
+  ok(session.slots[0].used && session.slots[0].msg.id == 0);
+  /* jump request id to 0xffffffff */
+  session.request_id = 0xffffffff;
+  while (mpack_rpc_request_tok(&session, &tok, NULL) != MPACK_OK);
+  ok(session.slots[31].used && session.slots[31].msg.id == 0xffffffff);
+  /* wrap back to 0 which is taken, resulting in 1 being used instead */
+  while (mpack_rpc_request_tok(&session, &tok, NULL) != MPACK_OK);
+  ok(session.slots[1].used && session.slots[1].msg.id == 1);
 }
 
 static int reqdata;
@@ -635,7 +652,8 @@ int main(void)
   unpacking_c1_returns_eread();
   very_deep_objects_returns_enomem();
   does_not_write_invalid_tokens();
-  copy_session_maintains_state();
+  rpc_copy_session_maintains_state();
+  rpc_request_id_wrap();
   number_conv = true;  /* test using mpack_{pack,unpack}_number to do the
                           numeric conversions */
   for (int i = 0; i < rpc_fixture_count; i++) {

@@ -95,18 +95,19 @@ MPACK_API int mpack_rpc_request_tok(mpack_rpc_session_t *session,
   if (session->send.index == 0) {
     int status;
     mpack_rpc_message_t msg;
-    msg.id = session->request_id;
-    msg.data = data;
-    session->send = mpack_rpc_request_hdr();
-    session->send.toks[2].type = MPACK_TOKEN_UINT;
-    session->send.toks[2].data.value.lo = msg.id;
-    session->send.toks[2].data.value.hi = 0;
-    *tok = session->send.toks[0];
-    status = mpack_rpc_put(session, msg);
-    if (status == -1) return MPACK_NOMEM;
-    assert(status);
+    do {
+      msg.id = session->request_id;
+      msg.data = data;
+      session->send = mpack_rpc_request_hdr();
+      session->send.toks[2].type = MPACK_TOKEN_UINT;
+      session->send.toks[2].data.value.lo = msg.id;
+      session->send.toks[2].data.value.hi = 0;
+      *tok = session->send.toks[0];
+      status = mpack_rpc_put(session, msg);
+      if (status == -1) return MPACK_NOMEM;
+      session->request_id = (session->request_id + 1) % 0xffffffff;
+    } while (!status);
     session->send.index++;
-    session->request_id++;
     return MPACK_EOF;
   }
   
