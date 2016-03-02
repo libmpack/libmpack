@@ -288,7 +288,7 @@ static void fixture_test(const struct fixture *ff, int fixture_idx)
     int s;
     /* unpack test */
     bufpos = 0;
-    mpack_parser_init(&parser);
+    mpack_parser_init(&parser, 0);
     char *b = (char *)fmsgpack;
     size_t bl = cs;
 
@@ -305,7 +305,7 @@ static void fixture_test(const struct fixture *ff, int fixture_idx)
         "unpack '%s' in steps of %zu", repr, cs);
 
     /* pack test */
-    mpack_parser_init(&parser);
+    mpack_parser_init(&parser, 0);
     b = buf;
     bl = MIN(cs, sizeof(buf));
     parser.data = fjson;
@@ -422,22 +422,28 @@ static void unpacking_c1_returns_eread(void)
   mpack_token_t tok;
   mpack_tokbuf_init(&reader);
   mpack_parser_t parser;
-  mpack_parser_init(&parser);
+  mpack_parser_init(&parser, 0);
   int res = mpack_read(&reader, &inp, &inplen, &tok);
   ok(res == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
 static void very_deep_objects_returns_enomem(void)
 {
-  mpack_parser_t parser;
-  mpack_parser_init(&parser);
-  parser.capacity = 2;
+  mpack_parser_t *p2 = malloc(sizeof(MPACK_PARSER_STRUCT(2)));
+  mpack_parser_t *p3 = malloc(sizeof(MPACK_PARSER_STRUCT(3)));
+  mpack_parser_init(p2, 2);
+  mpack_parser_init(p3, 3);
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
   const char *buf = (const char *)input;
   size_t buflen = sizeof(input);
-  ok(mpack_parse(&parser, &buf, &buflen, parse_enter, parse_exit)
+  ok(mpack_parse(p2, &buf, &buflen, parse_enter, parse_exit)
       == MPACK_NOMEM && buf == (char *)input + 2 && buflen == 1,
   "very deep objects return MPACK_ENOMEM");
+  mpack_parser_copy(p3, p2);
+  ok(mpack_parse(p3, &buf, &buflen, parse_enter, parse_exit) == MPACK_OK
+      && buf == (char *)input + 3 && buflen == 0);
+  free(p2);
+  free(p3);
 }
 
 static void does_not_write_invalid_tokens(void)
@@ -464,9 +470,43 @@ static void to_msgpack(const char *json, uint8_t **buf)
   size_t buflen = MSGPACK_BUFLEN;
   mpack_parser_t parser;
 
-  mpack_parser_init(&parser);
+  mpack_parser_init(&parser, 0);
   parser.data = (char *)json;
   if (mpack_unparse(&parser, (char **)buf, &buflen, unparse_enter, unparse_exit) != MPACK_OK) abort();
+}
+
+static void copy_session_maintains_state(void)
+{
+  int d1, d2, d3;
+  mpack_rpc_session_t *s2 = malloc(sizeof(MPACK_RPC_SESSION_STRUCT(2)));
+  mpack_rpc_session_t *s3 = malloc(sizeof(MPACK_RPC_SESSION_STRUCT(3)));
+  mpack_rpc_session_init(s2, 2);
+  mpack_rpc_session_init(s3, 3);
+  mpack_token_t tok;
+  while (mpack_rpc_request_tok(s2, &tok, &d1) != MPACK_OK);
+  while (mpack_rpc_request_tok(s2, &tok, &d2) != MPACK_OK);
+  ok(mpack_rpc_request_tok(s2, &tok, NULL) == MPACK_NOMEM);
+  mpack_rpc_session_copy(s3, s2);
+  while (mpack_rpc_request_tok(s3, &tok, &d3) != MPACK_OK);
+  size_t bl = 0xff;
+  uint8_t buf[0xff];
+  const char *b = (const char *)buf;
+  mpack_rpc_message_t msg;
+  to_msgpack("[1, 0, null, null]", (uint8_t **)&b);
+  b = (const char *)buf;
+  ok(mpack_rpc_receive(s3, &b, &bl, &msg) == MPACK_RPC_RESPONSE
+      && msg.data == &d1);
+  b = (const char *)buf;
+  to_msgpack("[1, 1, null, null]", (uint8_t **)&b);
+  b = (const char *)buf;
+  ok(mpack_rpc_receive(s3, &b, &bl, &msg) == MPACK_RPC_RESPONSE
+      && msg.data == &d2);
+  b = (const char *)buf;
+  to_msgpack("[1, 2, null, null]", (uint8_t **)&b);
+  b = (const char *)buf;
+  ok(mpack_rpc_receive(s3, &b, &bl, &msg) == MPACK_RPC_RESPONSE);
+  free(s2);
+  free(s3);
 }
 
 static int reqdata;
@@ -569,8 +609,7 @@ static void rpc_fixture_test(int fixture_idx)
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     for (size_t j = 0; j < 2; j++) { /* test the library from both endpoints */ 
       mpack_rpc_session_t session;
-      mpack_rpc_session_init(&session);
-      if (fixture->capacity) session.capacity = fixture->capacity;
+      mpack_rpc_session_init(&session, fixture->capacity);
       for (size_t k = 0; k < fixture->count; k++) {
         size_t cs = chunksizes[i];
         struct rpc_message *msg = fixture->messages + k;
@@ -596,6 +635,7 @@ int main(void)
   unpacking_c1_returns_eread();
   very_deep_objects_returns_enomem();
   does_not_write_invalid_tokens();
+  copy_session_maintains_state();
   number_conv = true;  /* test using mpack_{pack,unpack}_number to do the
                           numeric conversions */
   for (int i = 0; i < rpc_fixture_count; i++) {

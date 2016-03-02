@@ -1,15 +1,19 @@
+#include <string.h>
+
 #include "object.h"
 
 static int mpack_parser_full(mpack_parser_t *w);
 static mpack_node_t *mpack_parser_push(mpack_parser_t *w);
 static mpack_node_t *mpack_parser_pop(mpack_parser_t *w);
 
-MPACK_API void mpack_parser_init(mpack_parser_t *parser)
+MPACK_API void mpack_parser_init(mpack_parser_t *parser,
+    mpack_uint32_t capacity)
 {
   mpack_tokbuf_init(&parser->tokbuf);
   parser->data = NULL;
-  parser->capacity = MPACK_MAX_OBJECT_DEPTH;
+  parser->capacity = capacity ? capacity : MPACK_MAX_OBJECT_DEPTH;
   parser->size = 0;
+  memset(parser->items, 0, sizeof(mpack_node_t) * (parser->capacity + 1));
   parser->items[0].pos = (size_t)-1;
   parser->status = 0;
 }
@@ -88,6 +92,21 @@ MPACK_API int mpack_unparse(mpack_parser_t *parser, char **buf, size_t *buflen,
   }
 
   return status;
+}
+
+MPACK_API void mpack_parser_copy(mpack_parser_t *dst, mpack_parser_t *src)
+{
+  mpack_uint32_t i;
+  mpack_uint32_t dst_capacity = dst->capacity; 
+  assert(src->capacity <= dst_capacity);
+  /* copy all fields except the stack */
+  memcpy(dst, src, sizeof(MPACK_PARSER_STRUCT(0)) - sizeof(mpack_node_t));
+  /* reset capacity */
+  dst->capacity = dst_capacity;
+  /* copy the stack */
+  for (i = 0; i < src->capacity; i++) {
+    dst->items[i] = src->items[i];
+  }
 }
 
 static int mpack_parser_full(mpack_parser_t *parser)

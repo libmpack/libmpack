@@ -15,9 +15,10 @@ static int mpack_rpc_put(mpack_rpc_session_t *s, mpack_rpc_message_t m);
 static int mpack_rpc_pop(mpack_rpc_session_t *s, mpack_rpc_message_t *m);
 static void mpack_rpc_reset_hdr(mpack_rpc_header_t *hdr);
 
-MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *session)
+MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *session,
+    mpack_uint32_t capacity)
 {
-  session->capacity = MPACK_RPC_MAX_REQUESTS;
+  session->capacity = capacity ? capacity : MPACK_RPC_MAX_REQUESTS;
   session->request_id = 0;
   mpack_tokbuf_init(&session->reader);
   mpack_tokbuf_init(&session->writer);
@@ -94,18 +95,18 @@ MPACK_API int mpack_rpc_request_tok(mpack_rpc_session_t *session,
   if (session->send.index == 0) {
     int status;
     mpack_rpc_message_t msg;
-    msg.id = session->request_id++;
+    msg.id = session->request_id;
     msg.data = data;
     session->send = mpack_rpc_request_hdr();
     session->send.toks[2].type = MPACK_TOKEN_UINT;
     session->send.toks[2].data.value.lo = msg.id;
     session->send.toks[2].data.value.hi = 0;
     *tok = session->send.toks[0];
-    session->send.index++;
     status = mpack_rpc_put(session, msg);
-    if (status == -1)
-      return MPACK_NOMEM;
+    if (status == -1) return MPACK_NOMEM;
     assert(status);
+    session->send.index++;
+    session->request_id++;
     return MPACK_EOF;
   }
   
@@ -231,6 +232,24 @@ MPACK_API int mpack_rpc_notify(mpack_rpc_session_t *session, char **buf,
   }
 
   return status;
+}
+
+MPACK_API void mpack_rpc_session_copy(mpack_rpc_session_t *dst,
+    mpack_rpc_session_t *src)
+{
+  mpack_uint32_t i;
+  mpack_uint32_t dst_capacity = dst->capacity; 
+  assert(src->capacity <= dst_capacity);
+  /* copy all fields except slots */
+  memcpy(dst, src, sizeof(MPACK_RPC_SESSION_STRUCT(1)) -
+      sizeof(struct mpack_rpc_slot_s));
+  /* reset capacity */
+  dst->capacity = dst_capacity;
+  /* reinsert requests  */
+  memset(dst->slots, 0, sizeof(struct mpack_rpc_slot_s) * dst->capacity);
+  for (i = 0; i < src->capacity; i++) {
+    if (src->slots[i].used) mpack_rpc_put(dst, src->slots[i].msg);
+  }
 }
 
 static mpack_rpc_header_t mpack_rpc_request_hdr(void)
