@@ -5,7 +5,7 @@
 
 ### Introduction
 
-libmpack is a small binary serialization/RPC library that implements the both
+libmpack is a small binary serialization/RPC library that implements both the
 [msgpack](https://github.com/msgpack/msgpack/blob/master/spec.md) and
 [msgpack-rpc](https://github.com/msgpack-rpc/msgpack-rpc/blob/master/spec.md)
 specifications.
