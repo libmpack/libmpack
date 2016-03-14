@@ -77,7 +77,7 @@ MPACK_API int mpack_rpc_receive_tok(mpack_rpc_session_t *session,
     return MPACK_RPC_EMSGID;
     
   msg->id = tok.data.value.lo;
-  msg->data = NULL;
+  msg->data.p = NULL;
   type = (int)session->receive.toks[1].data.value.lo + MPACK_RPC_REQUEST;
 
   if (type == MPACK_RPC_RESPONSE && !mpack_rpc_pop(session, msg))
@@ -90,7 +90,7 @@ end:
 }
 
 MPACK_API int mpack_rpc_request_tok(mpack_rpc_session_t *session, 
-    mpack_token_t *tok, void *data)
+    mpack_token_t *tok, mpack_data_t data)
 {
   if (session->send.index == 0) {
     int status;
@@ -181,7 +181,7 @@ MPACK_API int mpack_rpc_receive(mpack_rpc_session_t *session, const char **buf,
 }
 
 MPACK_API int mpack_rpc_request(mpack_rpc_session_t *session, char **buf,
-    size_t *buflen, void *data)
+    size_t *buflen, mpack_data_t data)
 {
   int status = MPACK_EOF;
 

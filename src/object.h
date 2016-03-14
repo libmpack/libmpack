@@ -2,6 +2,7 @@
 #define MPACK_OBJECT_H
 
 #include "core.h"
+#include "conv.h"
 
 #ifndef MPACK_MAX_OBJECT_DEPTH
 # define MPACK_MAX_OBJECT_DEPTH 32
@@ -13,15 +14,25 @@ enum {
   MPACK_NOMEM = MPACK_ERROR + 1
 };
 
+/* Storing integer in pointers in undefined behavior according to the C
+ * standard. Define a union type to accomodate arbitrary user data associated
+ * with nodes(and with requests in rpc.h). */
+typedef union {
+  void *p;
+  mpack_uintmax_t u;
+  mpack_sintmax_t i;
+  double d;
+} mpack_data_t;
+
 typedef struct mpack_node_s {
   mpack_token_t tok;
   size_t pos;
-  void *data;
+  mpack_data_t data;
 } mpack_node_t;
 
 #define MPACK_PARSER_STRUCT(c)      \
   struct {                          \
-    void *data;                     \
+    mpack_data_t data;              \
     mpack_uint32_t size, capacity;  \
     int status;                     \
     mpack_tokbuf_t tokbuf;          \

@@ -34,6 +34,13 @@ static char buf[0xffffff];
 static size_t bufpos;
 static bool number_conv = false;
 
+static mpack_data_t d(void *p)
+{
+  mpack_data_t rv;
+  rv.p = p;
+  return rv;
+}
+
 static void w(const char *fmt, ...)
 {
   va_list ap;
@@ -60,7 +67,7 @@ static uint32_t item_count(const char *s)
 static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
 {
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = parent ? parent->data : parser->data;
+  char *p = parent ? parent->data.p : parser->data.p;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
     node->tok = mpack_pack_chunk(p, parent->tok.length);
@@ -157,15 +164,15 @@ static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
   }
 
 end:
-  node->data = p;
-  if (parent) parent->data = p;
+  node->data.p = p;
+  if (parent) parent->data.p = p;
 }
 
 static void unparse_exit(mpack_parser_t *parser, mpack_node_t *node)
 {
   (void)(parser);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = node->data;
+  char *p = node->data.p;
 
   switch (node->tok.type) {
     case MPACK_TOKEN_BIN:
@@ -176,8 +183,8 @@ static void unparse_exit(mpack_parser_t *parser, mpack_node_t *node)
     default: break;
   }
 
-  node->data = p;
-  if (parent) parent->data = p;
+  node->data.p = p;
+  if (parent) parent->data.p = p;
 }
 
 static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
@@ -308,7 +315,7 @@ static void fixture_test(const struct fixture *ff, int fixture_idx)
     mpack_parser_init(&parser, 0);
     b = buf;
     bl = MIN(cs, sizeof(buf));
-    parser.data = fjson;
+    parser.data.p = fjson;
     do {
       s = mpack_unparse(&parser, &b, &bl, unparse_enter, unparse_exit);
       if (s) {
@@ -471,7 +478,7 @@ static void to_msgpack(const char *json, uint8_t **buf)
   mpack_parser_t parser;
 
   mpack_parser_init(&parser, 0);
-  parser.data = (char *)json;
+  parser.data.p = (char *)json;
   if (mpack_unparse(&parser, (char **)buf, &buflen, unparse_enter, unparse_exit) != MPACK_OK) abort();
 }
 
@@ -483,11 +490,11 @@ static void rpc_copy_session_maintains_state(void)
   mpack_rpc_session_init(s2, 2);
   mpack_rpc_session_init(s3, 3);
   mpack_token_t tok;
-  while (mpack_rpc_request_tok(s2, &tok, &d1) != MPACK_OK);
-  while (mpack_rpc_request_tok(s2, &tok, &d2) != MPACK_OK);
-  ok(mpack_rpc_request_tok(s2, &tok, NULL) == MPACK_NOMEM);
+  while (mpack_rpc_request_tok(s2, &tok, d(&d1)) != MPACK_OK);
+  while (mpack_rpc_request_tok(s2, &tok, d(&d2)) != MPACK_OK);
+  ok(mpack_rpc_request_tok(s2, &tok, d(NULL)) == MPACK_NOMEM);
   mpack_rpc_session_copy(s3, s2);
-  while (mpack_rpc_request_tok(s3, &tok, &d3) != MPACK_OK);
+  while (mpack_rpc_request_tok(s3, &tok, d(&d3)) != MPACK_OK);
   size_t bl = 0xff;
   uint8_t buf[0xff];
   const char *b = (const char *)buf;
@@ -495,12 +502,12 @@ static void rpc_copy_session_maintains_state(void)
   to_msgpack("[1, 0, null, null]", (uint8_t **)&b);
   b = (const char *)buf;
   ok(mpack_rpc_receive(s3, &b, &bl, &msg) == MPACK_RPC_RESPONSE
-      && msg.data == &d1);
+      && msg.data.p == &d1);
   b = (const char *)buf;
   to_msgpack("[1, 1, null, null]", (uint8_t **)&b);
   b = (const char *)buf;
   ok(mpack_rpc_receive(s3, &b, &bl, &msg) == MPACK_RPC_RESPONSE
-      && msg.data == &d2);
+      && msg.data.p == &d2);
   b = (const char *)buf;
   to_msgpack("[1, 2, null, null]", (uint8_t **)&b);
   b = (const char *)buf;
@@ -515,14 +522,14 @@ static void rpc_request_id_wrap(void)
   mpack_rpc_session_init(&session, 0);
   mpack_token_t tok;
   /* produce request 0 */
-  while (mpack_rpc_request_tok(&session, &tok, NULL) != MPACK_OK);
+  while (mpack_rpc_request_tok(&session, &tok, d(NULL)) != MPACK_OK);
   ok(session.slots[0].used && session.slots[0].msg.id == 0);
   /* jump request id to 0xffffffff */
   session.request_id = 0xffffffff;
-  while (mpack_rpc_request_tok(&session, &tok, NULL) != MPACK_OK);
+  while (mpack_rpc_request_tok(&session, &tok, d(NULL)) != MPACK_OK);
   ok(session.slots[31].used && session.slots[31].msg.id == 0xffffffff);
   /* wrap back to 0 which is taken, resulting in 1 being used instead */
-  while (mpack_rpc_request_tok(&session, &tok, NULL) != MPACK_OK);
+  while (mpack_rpc_request_tok(&session, &tok, d(NULL)) != MPACK_OK);
   ok(session.slots[1].used && session.slots[1].msg.id == 1);
 }
 
@@ -540,7 +547,7 @@ static void rpc_check_outgoing(mpack_rpc_session_t *session,
   while (status == MPACK_EOF) {
     size_t bl = cs;
     if (m->type == MPACK_RPC_REQUEST || m->payload[3] == '0') {
-      status = mpack_rpc_request(session, &ptr, &bl, &reqdata);
+      status = mpack_rpc_request(session, &ptr, &bl, d(&reqdata));
     } else if (m->type == MPACK_RPC_RESPONSE || m->payload[3] == '1') {
       status = mpack_rpc_reply(session, &ptr, &bl, m->id);
     } else if (m->type == MPACK_RPC_NOTIFICATION || m->payload[3] == '2') {
@@ -600,7 +607,7 @@ static void rpc_check_incoming(mpack_rpc_session_t *session,
     to_msgpack(m->error, &db);
     to_msgpack(m->result, &db);
     result = msg.id == m->id;
-    result = msg.data == &reqdata;
+    result = msg.data.p == &reqdata;
   } else if (m->type == MPACK_RPC_NOTIFICATION) {
     result = true;
     to_msgpack(m->method, &db);

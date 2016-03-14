@@ -10,7 +10,7 @@ MPACK_API void mpack_parser_init(mpack_parser_t *parser,
     mpack_uint32_t capacity)
 {
   mpack_tokbuf_init(&parser->tokbuf);
-  parser->data = NULL;
+  parser->data.p = NULL;
   parser->capacity = capacity ? capacity : MPACK_MAX_OBJECT_DEPTH;
   parser->size = 0;
   memset(parser->items, 0, sizeof(mpack_node_t) * (parser->capacity + 1));
@@ -119,7 +119,7 @@ static mpack_node_t *mpack_parser_push(mpack_parser_t *parser)
   mpack_node_t *top;
   assert(parser->size < parser->capacity);
   top = parser->items + parser->size + 1;
-  top->data = NULL;
+  top->data.p = NULL;
   top->pos = 0;
   /* increase size and invoke callback, passing parent node if any */
   parser->size++;

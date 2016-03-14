@@ -30,7 +30,7 @@ typedef struct mpack_rpc_header_s {
 
 typedef struct mpack_rpc_message_s {
   mpack_uint32_t id;
-  void *data;
+  mpack_data_t data;
 } mpack_rpc_message_t;
 
 struct mpack_rpc_slot_s {
@@ -54,7 +54,7 @@ MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *s, mpack_uint32_t c)
 MPACK_API int mpack_rpc_receive_tok(mpack_rpc_session_t *s, mpack_token_t t,
     mpack_rpc_message_t *msg) FUNUSED FNONULL;
 MPACK_API int mpack_rpc_request_tok(mpack_rpc_session_t *s, mpack_token_t *t,
-    void *d) FUNUSED FNONULL_ARG((1,2));
+    mpack_data_t d) FUNUSED FNONULL_ARG((1,2));
 MPACK_API int mpack_rpc_reply_tok(mpack_rpc_session_t *s, mpack_token_t *t,
     mpack_uint32_t i) FUNUSED FNONULL;
 MPACK_API int mpack_rpc_notify_tok(mpack_rpc_session_t *s, mpack_token_t *t)
@@ -63,7 +63,7 @@ MPACK_API int mpack_rpc_notify_tok(mpack_rpc_session_t *s, mpack_token_t *t)
 MPACK_API int mpack_rpc_receive(mpack_rpc_session_t *s, const char **b,
     size_t *bl, mpack_rpc_message_t *m) FUNUSED FNONULL;
 MPACK_API int mpack_rpc_request(mpack_rpc_session_t *s, char **b, size_t *bl,
-    void *d) FUNUSED FNONULL_ARG((1,2,3));
+    mpack_data_t d) FUNUSED FNONULL_ARG((1,2,3));
 MPACK_API int mpack_rpc_reply(mpack_rpc_session_t *s, char **b, size_t *bl,
     mpack_uint32_t i) FNONULL FUNUSED;
 MPACK_API int mpack_rpc_notify(mpack_rpc_session_t *s, char **b, size_t *bl)
