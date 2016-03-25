@@ -19,7 +19,9 @@ $(RUNNER):
 	@mkdir -p $(DEPS)/src/qemu
 	@$(FETCH) $(QEMU_URL) | tar xfz - --strip-components=1 -C $(DEPS)/src/qemu
 	@cd $(DEPS)/src/qemu && \
-		./configure --prefix=$(DPREFIX) --target-list=armeb-linux-user && \
+		CFLAGS= LDFLAGS= \
+		./configure --prefix=$(DPREFIX) \
+		--target-list=armeb-linux-user && \
 		make install
 	@rm -rf $(DEPS)/src
 
