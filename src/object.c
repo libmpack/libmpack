@@ -119,7 +119,8 @@ static mpack_node_t *mpack_parser_push(mpack_parser_t *parser)
   mpack_node_t *top;
   assert(parser->size < parser->capacity);
   top = parser->items + parser->size + 1;
-  top->data.p = NULL;
+  top->data[0].p = NULL;
+  top->data[1].p = NULL;
   top->pos = 0;
   /* increase size and invoke callback, passing parent node if any */
   parser->size++;

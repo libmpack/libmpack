@@ -67,7 +67,7 @@ static uint32_t item_count(const char *s)
 static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
 {
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = parent ? parent->data.p : parser->data.p;
+  char *p = parent ? parent->data[0].p : parser->data.p;
 
   if (parent && parent->tok.type > MPACK_TOKEN_MAP) {
     node->tok = mpack_pack_chunk(p, parent->tok.length);
@@ -164,15 +164,15 @@ static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
   }
 
 end:
-  node->data.p = p;
-  if (parent) parent->data.p = p;
+  node->data[0].p = p;
+  if (parent) parent->data[0].p = p;
 }
 
 static void unparse_exit(mpack_parser_t *parser, mpack_node_t *node)
 {
   (void)(parser);
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
-  char *p = node->data.p;
+  char *p = node->data[0].p;
 
   switch (node->tok.type) {
     case MPACK_TOKEN_BIN:
@@ -183,8 +183,8 @@ static void unparse_exit(mpack_parser_t *parser, mpack_node_t *node)
     default: break;
   }
 
-  node->data.p = p;
-  if (parent) parent->data.p = p;
+  node->data[0].p = p;
+  if (parent) parent->data[0].p = p;
 }
 
 static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)

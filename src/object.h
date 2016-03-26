@@ -27,7 +27,10 @@ typedef union {
 typedef struct mpack_node_s {
   mpack_token_t tok;
   size_t pos;
-  mpack_data_t data;
+  /* allow 2 instances mpack_data_t per node. the rationale is that when
+   * serializing, the user may need to keep track of traversal state besides the
+   * parent node reference */
+  mpack_data_t data[2];
 } mpack_node_t;
 
 #define MPACK_PARSER_STRUCT(c)      \
