@@ -122,6 +122,7 @@ static mpack_node_t *mpack_parser_push(mpack_parser_t *parser)
   top->data[0].p = NULL;
   top->data[1].p = NULL;
   top->pos = 0;
+  top->key_visited = 0;
   /* increase size and invoke callback, passing parent node if any */
   parser->size++;
   return top;
@@ -142,7 +143,19 @@ static mpack_node_t *mpack_parser_pop(mpack_parser_t *parser)
   if (parent) {
     /* we use parent->tok.length to keep track of how many children remain.
      * update it to reflect the processed node. */
-    parent->pos += top->tok.type == MPACK_TOKEN_CHUNK ? top->tok.length : 1;
+    if (top->tok.type == MPACK_TOKEN_CHUNK) {
+      parent->pos += top->tok.length;
+    } else if (parent->tok.type == MPACK_TOKEN_MAP) {
+      /* maps allow up to 2^32 - 1 pairs, so to allow this many items in a
+       * 32-bit length variable we use an additional flag to determine if the
+       * key of a certain position was visited */
+      if (parent->key_visited) {
+        parent->pos++;
+      }
+      parent->key_visited = !parent->key_visited;
+    } else {
+      parent->pos++;
+    }
   }
 
   parser->size--;

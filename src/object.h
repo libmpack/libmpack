@@ -27,6 +27,8 @@ typedef union {
 typedef struct mpack_node_s {
   mpack_token_t tok;
   size_t pos;
+  /* flag to determine if the key was visited when traversing a map */
+  int key_visited;
   /* allow 2 instances mpack_data_t per node. the rationale is that when
    * serializing, the user may need to keep track of traversal state besides the
    * parent node reference */

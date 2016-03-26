@@ -159,7 +159,7 @@ static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
       break;
     case '{':
       p++;
-      node->tok = mpack_pack_map(item_count(p) * 2);
+      node->tok = mpack_pack_map(item_count(p));
       break;
   }
 
@@ -224,7 +224,7 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     case MPACK_TOKEN_STR:
     case MPACK_TOKEN_EXT:
       w("\"");
-      if (!p || p->type != MPACK_TOKEN_MAP || parent->pos % 2) {
+      if (!p || p->type != MPACK_TOKEN_MAP || parent->key_visited) {
         if (t->type == MPACK_TOKEN_EXT) {
           w("e:%02x:", t->data.ext_type);
         } else {
@@ -265,7 +265,7 @@ static void parse_exit(mpack_parser_t *parser, mpack_node_t *node)
   }
 
   if (p && p->type < MPACK_TOKEN_BIN && parent->pos < p->length) {
-    w(p->type == MPACK_TOKEN_MAP ? (parent->pos % 2 ? ":" : ",") : ",");
+    w(p->type == MPACK_TOKEN_MAP ? (parent->key_visited ? ":" : ",") : ",");
   }
 }
 
@@ -292,12 +292,14 @@ static void fixture_test(const struct fixture *ff, int fixture_idx)
   for (size_t i = 0; i < ARRAY_SIZE(chunksizes); i++) {
     mpack_parser_t parser;
     size_t cs = chunksizes[i];
+    char *b;
+    size_t bl;
     int s;
     /* unpack test */
     bufpos = 0;
     mpack_parser_init(&parser, 0);
-    char *b = (char *)fmsgpack;
-    size_t bl = cs;
+    b = (char *)fmsgpack;
+    bl = cs;
 
     do {
       s = mpack_parse(&parser, (const char **)&b, &bl, parse_enter, parse_exit);

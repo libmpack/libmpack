@@ -176,7 +176,7 @@ static int mpack_rtoken(const char **buf, size_t *buflen,
     return mpack_value(MPACK_TOKEN_UINT, 1, mpack_byte(t), tok);
   } else if (t < 0x90) {
     /* fixmap */
-    return mpack_blob(MPACK_TOKEN_MAP, (t & 0xf) * (unsigned)2, 0, tok);
+    return mpack_blob(MPACK_TOKEN_MAP, t & 0xf, 0, tok);
   } else if (t < 0xa0) {
     /* fixarray */
     return mpack_blob(MPACK_TOKEN_ARRAY, t & 0xf, 0, tok);
@@ -318,8 +318,6 @@ static int mpack_rblob(mpack_token_type_t type, mpack_uint32_t tlen,
 
   if (type == MPACK_TOKEN_EXT) {
     tok->data.ext_type = ADVANCE(buf, buflen);
-  } else if (type == MPACK_TOKEN_MAP) {
-    tok->length *= 2;
   }
 
   return MPACK_OK;
@@ -348,7 +346,7 @@ static int mpack_wtoken(const mpack_token_t *tok, char **buf,
     case MPACK_TOKEN_ARRAY:
       return mpack_warray(buf, buflen, tok->length);
     case MPACK_TOKEN_MAP:
-      return mpack_wmap(buf, buflen, tok->length / 2);
+      return mpack_wmap(buf, buflen, tok->length);
     default:
       return MPACK_ERROR;
   }
