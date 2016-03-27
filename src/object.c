@@ -106,7 +106,7 @@ MPACK_API void mpack_parser_copy(mpack_parser_t *dst, mpack_parser_t *src)
   /* reset capacity */
   dst->capacity = dst_capacity;
   /* copy the stack */
-  for (i = 0; i < src->capacity; i++) {
+  for (i = 0; i <= src->capacity; i++) {
     dst->items[i] = src->items[i];
   }
 }
