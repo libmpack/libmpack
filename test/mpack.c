@@ -436,23 +436,48 @@ static void unpacking_c1_returns_eread(void)
   ok(res == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 
-static void very_deep_objects_returns_enomem(void)
+static void parsing_very_deep_objects_returns_enomem(void)
 {
+  bufpos = 0;
   mpack_parser_t *p2 = malloc(sizeof(MPACK_PARSER_STRUCT(2)));
   mpack_parser_t *p3 = malloc(sizeof(MPACK_PARSER_STRUCT(3)));
   mpack_parser_init(p2, 2);
   mpack_parser_init(p3, 3);
   const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
-  const char *buf = (const char *)input;
-  size_t buflen = sizeof(input);
-  ok(mpack_parse(p2, &buf, &buflen, parse_enter, parse_exit)
-      == MPACK_NOMEM && buf == (char *)input + 2 && buflen == 1,
-  "very deep objects return MPACK_ENOMEM");
+  const char *b = (const char *)input;
+  size_t bl = sizeof(input);
+  ok(mpack_parse(p2, &b, &bl, parse_enter, parse_exit)
+      == MPACK_NOMEM && b == (char *)input + 2 && bl == 1,
+  "parsing very deep objects return MPACK_ENOMEM");
   mpack_parser_copy(p3, p2);
-  ok(mpack_parse(p3, &buf, &buflen, parse_enter, parse_exit) == MPACK_OK
-      && buf == (char *)input + 3 && buflen == 0);
+  ok(mpack_parse(p3, &b, &bl, parse_enter, parse_exit) == MPACK_OK
+      && b == (char *)input + 3 && bl == 0);
+  is(buf, "[[1]]");
   free(p2);
   free(p3);
+}
+
+static void unparsing_very_deep_objects_returns_enomem(void)
+{
+  mpack_parser_t *p2 = malloc(sizeof(MPACK_PARSER_STRUCT(2)));
+  mpack_parser_t *p3 = malloc(sizeof(MPACK_PARSER_STRUCT(3)));
+  mpack_parser_init(p2, 2);
+  mpack_parser_init(p3, 3);
+  char input[] = "[[1]]";
+  uint8_t buf[16];
+  char *b = (char *)buf;
+  size_t bl = sizeof(buf);
+  p2->data.p = input;
+  ok(mpack_unparse(p2, &b, &bl, unparse_enter, unparse_exit)
+      == MPACK_NOMEM && b == (char *)buf + 2 && bl == 14,
+  "unparsing very deep objects return MPACK_ENOMEM");
+  const uint8_t e2[] = {0x91, 0x91};
+  cmp_mem(e2, buf, 2);
+  mpack_parser_copy(p3, p2);
+  ok(mpack_unparse(p3, &b, &bl, unparse_enter, unparse_exit) == MPACK_OK
+      && b == (char *)buf + 3 && bl == 13);
+  const uint8_t e3[] = {0x91, 0x91, 0x01};
+  cmp_mem(e3, buf, 3);
 }
 
 static void does_not_write_invalid_tokens(void)
@@ -659,7 +684,8 @@ int main(void)
   signed_positive_packs_with_unsigned_format();
   positive_signed_format_unpacks_as_unsigned();
   unpacking_c1_returns_eread();
-  very_deep_objects_returns_enomem();
+  parsing_very_deep_objects_returns_enomem();
+  unparsing_very_deep_objects_returns_enomem();
   does_not_write_invalid_tokens();
   rpc_copy_session_maintains_state();
   rpc_request_id_wrap();
