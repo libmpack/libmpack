@@ -81,12 +81,14 @@ MPACK_API int mpack_unparse(mpack_parser_t *parser, char **buf, size_t *buflen,
     mpack_token_t tok;
     mpack_tokbuf_t *tb = &parser->tokbuf;
 
-    if (!tb->plen) {
+    if (!tb->plen)
       parser->status = mpack_unparse_tok(parser, &tok, enter_cb, exit_cb);
-      if (parser->status == MPACK_NOMEM) break;
-    }
 
     status = parser->status;
+
+    if (status == MPACK_NOMEM)
+      break;
+
     write_status = mpack_write(tb, buf, buflen, &tok);
     status = write_status ? write_status : status;
   }
