@@ -695,5 +695,14 @@ int main(void)
   for (int i = 0; i < number_fixture_count; i++) {
     fixture_test(number_fixtures, i);
   }
+  /* test size macros */
+  ok(sizeof(MPACK_PARSER_STRUCT(2)) == MPACK_PARSER_STRUCT_SIZE(2));
+  ok(sizeof(MPACK_PARSER_STRUCT(3)) == MPACK_PARSER_STRUCT_SIZE(3));
+  ok(sizeof(MPACK_PARSER_STRUCT(9)) == MPACK_PARSER_STRUCT_SIZE(9));
+  ok(sizeof(MPACK_PARSER_STRUCT(45)) == MPACK_PARSER_STRUCT_SIZE(45));
+  ok(sizeof(MPACK_RPC_SESSION_STRUCT(2)) == MPACK_RPC_SESSION_STRUCT_SIZE(2));
+  ok(sizeof(MPACK_RPC_SESSION_STRUCT(3)) == MPACK_RPC_SESSION_STRUCT_SIZE(3));
+  ok(sizeof(MPACK_RPC_SESSION_STRUCT(9)) == MPACK_RPC_SESSION_STRUCT_SIZE(9));
+  ok(sizeof(MPACK_RPC_SESSION_STRUCT(45)) == MPACK_RPC_SESSION_STRUCT_SIZE(45));
   done_testing();
 }
