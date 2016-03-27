@@ -46,6 +46,10 @@ struct mpack_rpc_slot_s {
     struct mpack_rpc_slot_s slots[c];    \
   }
 
+#define MPACK_RPC_SESSION_STRUCT_SIZE(c)        \
+  (sizeof(struct mpack_rpc_slot_s) * (c - 1) +  \
+   sizeof(MPACK_RPC_SESSION_STRUCT(1)))
+
 typedef MPACK_RPC_SESSION_STRUCT(MPACK_RPC_MAX_REQUESTS) mpack_rpc_session_t;
 
 MPACK_API void mpack_rpc_session_init(mpack_rpc_session_t *s, mpack_uint32_t c)
