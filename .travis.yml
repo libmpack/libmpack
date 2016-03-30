@@ -37,6 +37,16 @@ matrix:
     - os: osx
       env: CONFIG=release
       compiler: gcc
+    - os: linux
+      compiler: gcc
+      env: CONFIG=lua-binding  # set for the description in travis UI
+      addons:
+        apt:
+          packages:
+            - valgrind
+      script:
+        - make config=amalgamation
+        - if ! make -C binding/lua valgrind; then cat binding/lua/valgrind.log; exit 1; fi
 
 script:
   make config=${CONFIG} test
@@ -44,6 +54,7 @@ script:
 cache:
   directories:
     - .deps/usr
+    - binding/lua/.deps/5.1.5/usr
 
 after_failure:
   cat asan.* ubsan.* msan.* || true
