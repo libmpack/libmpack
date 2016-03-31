@@ -48,6 +48,11 @@ valgrind: $(BUSTED) $(MPACK)
 	valgrind $(VALGRIND_OPTS) $(LUA) \
 		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc11-0/bin/busted test.lua
 
+gdb: $(BUSTED) $(MPACK)
+	eval $$($(LUAROCKS) path); \
+	gdb -x .gdb --args $(LUA) \
+		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc11-0/bin/busted test.lua
+
 $(MPACK): $(LUAROCKS) lmpack.c
 	$(LUAROCKS) make CFLAGS='$(CFLAGS)'
 
@@ -69,4 +74,4 @@ $(LUA):
 	sed -i -e '/^CFLAGS/s/-O2/-g3/' src/Makefile && \
 	make $(LUA_TARGET) install INSTALL_TOP=$(DEPS_PREFIX)
 
-.PHONY: all depsclean test valgrind
+.PHONY: all depsclean test gdb valgrind
