@@ -3,6 +3,14 @@
 local mpack = require('mpack')
 local packed, unpacked
 
+function fhex(s)
+  local rv = {}
+  for h in s:gmatch('%x+') do
+    rv[#rv + 1] = string.char(tonumber(h, 16))
+  end
+  return table.concat(rv)
+end
+
 local Type = {}
 Type.__index = Type
 function Type.new(a, b, c)
@@ -132,6 +140,53 @@ function rpc()
   assert(failed)
 end
 
+function rpc_unpack()
+  local session = mpack.Session({unpack = mpack.Unpacker()})
+  session:receive(fhex('94 00 00 a6 6d 65 74 68 6f 64 92 01 a1 61'))
+  session:request('req1')
+  session:receive(fhex('94 01 00 c0 a6 72 65 73 75 6c 74'))
+  session:receive(fhex('94'))
+  session:receive(fhex('00'))
+  session:receive(fhex('01'))
+  session:receive(fhex('a6'))
+  session:receive(fhex('6d'))
+  session:receive(fhex('65'))
+  session:receive(fhex('74'))
+  session:receive(fhex('68'))
+  session:receive(fhex('6f'))
+  session:receive(fhex('64'))
+  session:receive(fhex('92'))
+  session:receive(fhex('01'))
+  session:receive(fhex('a1'))
+  session:receive(fhex('61'))
+  session:request('req2')
+  session:receive(fhex('94'))
+  session:receive(fhex('01'))
+  session:receive(fhex('01'))
+  session:receive(fhex('c0'))
+  session:receive(fhex('a6'))
+  session:receive(fhex('72'))
+  session:receive(fhex('65'))
+  session:receive(fhex('73'))
+  session:receive(fhex('75'))
+  session:receive(fhex('6c'))
+  session:receive(fhex('74'))
+  session:receive(fhex('93 02 a6 6d 65 74 68 6f 64 92 01 a1 61'))
+  session:receive(fhex('93'))
+  session:receive(fhex('02'))
+  session:receive(fhex('a6'))
+  session:receive(fhex('6d'))
+  session:receive(fhex('65'))
+  session:receive(fhex('74'))
+  session:receive(fhex('68'))
+  session:receive(fhex('6f'))
+  session:receive(fhex('64'))
+  session:receive(fhex('92'))
+  session:receive(fhex('01'))
+  session:receive(fhex('a1'))
+  session:receive(fhex('61'))
+end
+
 function run()
   simple_unpack()
   simple_pack()
@@ -140,6 +195,7 @@ function run()
   pack_unpack_ext()
   cyclic_ref()
   rpc()
+  rpc_unpack()
 end
 
 function collect()

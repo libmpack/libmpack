@@ -47,6 +47,13 @@ typedef struct {
   lua_State *L;
   int reg;
   mpack_rpc_session_t *session;
+  struct {
+    int type;
+    mpack_rpc_message_t msg;
+    int method_or_error;
+    int args_or_result;
+  } unpacked;
+  int unpacker;
 } Session;
 
 static int lmpack_ref(lua_State *L, int reg)
@@ -147,6 +154,16 @@ static int lmpack_isnil(lua_State *L, int index)
   lua_getfield(L, LUA_REGISTRYINDEX, NIL_NAME);
   rv = lua_rawequal(L, -1, -2);
   lua_pop(L, 1);
+  return rv;
+}
+
+static int lmpack_isunpacker(lua_State *L, int index)
+{
+  int rv;
+  if (!lua_isuserdata(L, index) || !lua_getmetatable(L, index)) return 0;
+  luaL_getmetatable(L, UNPACKER_META_NAME);
+  rv = lua_rawequal(L, -1, -2);
+  lua_pop(L, 2);
   return rv;
 }
 
@@ -361,6 +378,38 @@ static void lmpack_parse_exit(mpack_parser_t *parser, mpack_node_t *node)
   }
 }
 
+static int lmpack_unpacker_unpack_str(lua_State *L, Unpacker *unpacker,
+    const char **str, size_t *len)
+{
+  int rv;
+
+  if (unpacker->unpacking) {
+    return luaL_error(L, "Unpacker instance already working. Use another "
+                         "Unpacker or the module's \"unpack\" function if you "
+                         "need to unpack from the ext handler");
+  }
+  
+  do {
+    unpacker->unpacking = 1;
+    rv = mpack_parse(unpacker->parser, str, len, lmpack_parse_enter,
+        lmpack_parse_exit);
+    unpacker->unpacking = 0;
+
+    if (rv == MPACK_NOMEM) {
+      unpacker->parser = lmpack_grow_parser(unpacker->parser);
+      if (!unpacker->parser) {
+        unpacker->unpacking = 0;
+        return luaL_error(L, "failed to grow Unpacker capacity");
+      }
+    }
+  } while (rv == MPACK_NOMEM);
+
+  if (rv == MPACK_ERROR)
+    return luaL_error(L, "invalid msgpack string");
+
+  return rv;
+}
+
 static int lmpack_unpacker_unpack(lua_State *L)
 {
   int result, argc;
@@ -385,30 +434,7 @@ static int lmpack_unpacker_unpack(lua_State *L)
       "start position must be less than or equal to the input string length");
 
   str += (size_t)startpos - 1;
-
-  if (unpacker->unpacking) {
-    return luaL_error(L, "Unpacker instance already working. Use another "
-                         "Unpacker or the module's \"unpack\" function if you "
-                         "need to unpack from the ext handler");
-  }
-  
-  do {
-    unpacker->unpacking = 1;
-    result = mpack_parse(unpacker->parser, &str, &len, lmpack_parse_enter,
-        lmpack_parse_exit);
-    unpacker->unpacking = 0;
-
-    if (result == MPACK_NOMEM) {
-      unpacker->parser = lmpack_grow_parser(unpacker->parser);
-      if (!unpacker->parser) {
-        unpacker->unpacking = 0;
-        return luaL_error(L, "failed to grow Unpacker capacity");
-      }
-    }
-  } while (result == MPACK_NOMEM);
-
-  if (result == MPACK_ERROR)
-    return luaL_error(L, "invalid msgpack string");
+  result = lmpack_unpacker_unpack_str(L, unpacker, &str, &len);
 
   if (result == MPACK_EOF)
     /* if we hit EOF, return nil as the object */
@@ -735,12 +761,28 @@ static int lmpack_session_new(lua_State *L)
   lua_newtable(L);
   rv->reg = luaL_ref(L, LUA_REGISTRYINDEX);
 #endif
+  rv->unpacker = LUA_REFNIL;
+  rv->unpacked.args_or_result = LUA_NOREF;
+  rv->unpacked.method_or_error = LUA_NOREF;
+  rv->unpacked.type = MPACK_EOF;
+
+  if (lua_istable(L, 1)) {
+    /* parse options */
+    lua_getfield(L, 1, "unpack");
+    if (!lmpack_isunpacker(L, -1)) {
+      return luaL_error(L,
+          "\"unpack\" option must be a " UNPACKER_META_NAME " instance"); 
+    }
+    rv->unpacker = lmpack_ref(L, rv->reg);
+  }
+
   return 1;
 }
 
 static int lmpack_session_delete(lua_State *L)
 {
   Session *session = lmpack_check_session(L, 1);
+  lmpack_unref(L, session->reg, session->unpacker);
 #ifndef MPACK_DEBUG_REGISTRY_LEAK
   luaL_unref(L, LUA_REGISTRYINDEX, session->reg);
 #endif
@@ -750,12 +792,12 @@ static int lmpack_session_delete(lua_State *L)
 
 static int lmpack_session_receive(lua_State *L)
 {
-  int type, argc;
+  int argc, done, rcount = 3;
   lua_Number startpos;
   size_t len;
   const char *str, *str_init;
-  mpack_rpc_message_t msg;
   Session *session;
+  Unpacker *unpacker = NULL;
 
   if ((argc = lua_gettop(L)) > 3 || argc < 2)
     return luaL_error(L, "expecting between 2 and 3 arguments"); 
@@ -772,31 +814,84 @@ static int lmpack_session_receive(lua_State *L)
       "start position must be less than or equal to the input string length");
 
   str += (size_t)startpos - 1;
-  type = mpack_rpc_receive(session->session, &str, &len, &msg);
 
-  if (type == MPACK_RPC_REQUEST) {
-    lua_pushstring(L, "request");
-    lua_pushnumber(L, msg.id);
-  } else if (type == MPACK_RPC_RESPONSE) {
-    lua_pushstring(L, "response");
-    lmpack_geti(L, session->reg, (int)msg.data.i);
-    if (msg.data.i != LUA_NOREF)
-      lmpack_unref(L, session->reg, (int)msg.data.i);
-  } else if (type == MPACK_RPC_NOTIFICATION) {
-    lua_pushstring(L, "notification");
-    lua_pushnil(L);
-  } else if (type == MPACK_EOF) {
-    lua_pushnil(L);
-    lua_pushnil(L);
-  } else {
-    /* In most cases the only sane thing to do when receiving invalid
-     * msgpack-rpc is to close the connection, so handle all errors with
-     * this generic message. Later may add more detailed information. */
-    return luaL_error(L, "received invalid msgpack-rpc payload");
+  if (session->unpacker != LUA_REFNIL) {
+    lmpack_geti(L, session->reg, session->unpacker);
+    unpacker = lmpack_check_unpacker(L, -1);
+    rcount += 2;
+    lua_pop(L, 1);
   }
 
+  for (;;) {
+    int result;
+
+    if (session->unpacked.type == MPACK_EOF) {
+      session->unpacked.type =
+        mpack_rpc_receive(session->session, &str, &len, &session->unpacked.msg);
+
+      if (!unpacker || session->unpacked.type == MPACK_EOF)
+        break;
+    }
+    
+    result = lmpack_unpacker_unpack_str(L, unpacker, &str, &len);
+
+    if (result == MPACK_EOF) break;
+
+    if (session->unpacked.method_or_error == LUA_NOREF) {
+      session->unpacked.method_or_error = lmpack_ref(L, session->reg);
+    } else {
+      session->unpacked.args_or_result = lmpack_ref(L, session->reg);
+      break;
+    }
+  }
+
+  done = session->unpacked.type != MPACK_EOF
+    && (session->unpacked.args_or_result != LUA_NOREF || !unpacker);
+
+  if (!done) {
+    lua_pushnil(L);
+    lua_pushnil(L);
+    if (unpacker) {
+      lua_pushnil(L);
+      lua_pushnil(L);
+    }
+    goto end;
+  }
+
+  switch (session->unpacked.type) {
+    case MPACK_RPC_REQUEST:
+      lua_pushstring(L, "request");
+      lua_pushnumber(L, session->unpacked.msg.id);
+      break;
+    case MPACK_RPC_RESPONSE:
+      lua_pushstring(L, "response");
+      lmpack_geti(L, session->reg, (int)session->unpacked.msg.data.i);
+      break;
+    case MPACK_RPC_NOTIFICATION:
+      lua_pushstring(L, "notification");
+      lua_pushnil(L);
+      break;
+    default:
+      /* In most cases the only sane thing to do when receiving invalid
+       * msgpack-rpc is to close the connection, so handle all errors with
+       * this generic message. Later may add more detailed information. */
+      return luaL_error(L, "invalid msgpack-rpc string");
+  }
+
+  session->unpacked.type = MPACK_EOF;
+
+  if (unpacker) {
+    lmpack_geti(L, session->reg, session->unpacked.method_or_error);
+    lmpack_geti(L, session->reg, session->unpacked.args_or_result);
+    lmpack_unref(L, session->reg, session->unpacked.method_or_error);
+    lmpack_unref(L, session->reg, session->unpacked.args_or_result);
+    session->unpacked.method_or_error = LUA_NOREF;
+    session->unpacked.args_or_result = LUA_NOREF;
+  }
+
+end:
   lua_pushinteger(L, str - str_init + 1);
-  return 3;
+  return rcount;
 }
 
 static int lmpack_session_request(lua_State *L)
