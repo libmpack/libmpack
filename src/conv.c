@@ -1,5 +1,6 @@
 #include "conv.h"
 
+static int mpack_fits_single(double v);
 static mpack_value_t mpack_pack_ieee754(double v, unsigned m, unsigned e);
 static int mpack_is_be(void) FPURE;
 static double mpack_fmod_pow2_32(double a);
@@ -54,21 +55,13 @@ MPACK_API mpack_token_t mpack_pack_sint(mpack_sintmax_t v)
   return mpack_pack_uint((mpack_uintmax_t)v);
 }
 
-MPACK_API int fits_single(double v)
-{
-  const double float_max_abs = 3.4028234663852886e+38;
-  const double float_min_abs = 1.4012984643248171e-45;
-  double vabs = v < 0 ? -v : v;
-  return vabs == 0 || (vabs >= float_min_abs && vabs <= float_max_abs);
-}
-
 MPACK_API mpack_token_t mpack_pack_float_compat(double v)
 {
   /* ieee754 single-precision limits to determine if "v" can be fully
    * represented in 4 bytes */
   mpack_token_t rv;
 
-  if (fits_single(v)) {
+  if (mpack_fits_single(v)) {
     rv.length = 4;
     rv.data.value = mpack_pack_ieee754(v, 23, 8);
   } else {
@@ -86,7 +79,7 @@ MPACK_API mpack_token_t mpack_pack_float_fast(double v)
    * represented in 4 bytes */
   mpack_token_t rv;
 
-  if (fits_single(v)) {
+  if (mpack_fits_single(v)) {
     union {
       float f;
       mpack_uint32_t m;
@@ -316,6 +309,11 @@ MPACK_API double mpack_unpack_number(mpack_token_t t)
   }
   rv = (double)lo + POW2(32) * hi;
   return t.type == MPACK_TOKEN_SINT ? -rv : rv;
+}
+
+static int mpack_fits_single(double v)
+{
+  return (float)v == v;
 }
 
 static mpack_value_t mpack_pack_ieee754(double v, unsigned mantbits,
