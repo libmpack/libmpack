@@ -1,4 +1,4 @@
-local git_tag = '1.0.1'
+local git_tag = '1.0.2'
 
 package = 'mpack'
 version = git_tag .. '-0'
