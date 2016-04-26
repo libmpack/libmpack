@@ -29,6 +29,12 @@
 #define SESSION_META_NAME "mpack.Session"
 #define NIL_NAME "mpack.Nil"
 
+#if LUA_VERSION_NUM > 501
+typedef luaL_Reg luaL_reg;
+#define luaL_register(L, name, lreg) (luaL_setfuncs((L), (lreg), 0))
+#define lua_objlen(L, idx) (lua_rawlen(L, (idx)))
+#endif
+
 typedef struct {
   lua_State *L;
   mpack_parser_t *parser;
