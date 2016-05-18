@@ -1,7 +1,11 @@
 # makefile to setup environment for travis and development
 
+# distributors probably want to set this to 'yes' for both make and make install
+USE_SYSTEM_LUA ?= no
+
 # Lua-related configuration
-LUA_VERSION ?= 5.1.5
+LUA_VERSION_MAJ_MIN ?= 5.1
+LUA_VERSION ?= $(LUA_VERSION_MAJ_MIN).5
 LUA_VERSION_NOPATCH = $(shell echo -n $(LUA_VERSION) | sed 's!\([0-9]\.[0-9]\).[0-9]!\1!')
 LUA_URL ?= https://github.com/lua/lua/releases/download/$(LUA_VERSION)/lua-$(LUA_VERSION).tar.gz
 LUAROCKS_URL ?= https://github.com/keplerproject/luarocks/archive/v2.2.0.tar.gz
@@ -16,13 +20,26 @@ DEPS_BIN ?= $(DEPS_PREFIX)/bin
 LUA ?= $(DEPS_BIN)/lua
 LUAROCKS ?= $(DEPS_BIN)/luarocks
 BUSTED ?= $(DEPS_BIN)/busted
+ifeq ($(USE_SYSTEM_LUA),no)
 MPACK ?= $(DEPS_PREFIX)/lib/lua/$(LUA_VERSION_NOPATCH)/mpack.so
+else
+MPACK ?= mpack.so
+endif
 
 # Compilation
 CC ?= gcc
-CFLAGS := -ansi -O0 -g3 -fPIC -Wall -Wextra -Werror -Wconversion \
-	-Wstrict-prototypes -Wno-unused-parameter -pedantic \
-	-DMPACK_DEBUG_REGISTRY_LEAK
+PKG_CONFIG ?= pkg-config
+CFLAGS ?= -ansi -O0 -g3 -Wall -Wextra -Werror -Wconversion \
+	-Wstrict-prototypes -Wno-unused-parameter -pedantic
+CFLAGS += -fPIC -DMPACK_DEBUG_REGISTRY_LEAK
+
+LUA_INCLUDE := $(shell $(PKG_CONFIG) --cflags lua-$(LUA_VERSION_MAJ_MIN) 2>/dev/null || echo "-I/usr/include/lua$(LUA_VERSION_MAJ_MIN)")
+LUA_LIB := $(shell $(PKG_CONFIG) --libs lua-$(LUA_VERSION_MAJ_MIN) 2>/dev/null || echo "-llua$(LUA_VERSION_MAJ_MIN)")
+INCLUDES = $(LUA_INCLUDE)
+LIBS = $(LUA_LIB)
+
+LUA_CMOD_INSTALLDIR := $(shell $(PKG_CONFIG) --variable=INSTALL_CMOD lua-$(LUA_VERSION_MAJ_MIN) 2>/dev/null || echo "/usr/lib/lua/$(LUA_VERSION_MAJ_MIN)")
+
 
 # Misc
 # Options used by the 'valgrind' target, which runs the tests under valgrind
@@ -53,8 +70,13 @@ gdb: $(BUSTED) $(MPACK)
 	gdb -x .gdb --args $(LUA) \
 		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc11-0/bin/busted test.lua
 
+ifeq ($(USE_SYSTEM_LUA),no)
 $(MPACK): $(LUAROCKS) lmpack.c
 	$(LUAROCKS) make CFLAGS='$(CFLAGS)'
+else
+$(MPACK): lmpack.c
+	$(CC) -shared $(CFLAGS) $(INCLUDES) $(LDFLAGS) $^ -o $@ $(LIBS)
+endif
 
 $(BUSTED): $(LUAROCKS)
 	$(LUAROCKS) install busted
@@ -74,4 +96,12 @@ $(LUA):
 	sed -i -e '/^CFLAGS/s/-O2/-g3/' src/Makefile && \
 	make $(LUA_TARGET) install INSTALL_TOP=$(DEPS_PREFIX)
 
-.PHONY: all depsclean test gdb valgrind
+install: $(MPACK)
+ifeq ($(USE_SYSTEM_LUA),no)
+	@:
+else
+	mkdir -p "$(DESTDIR)$(LUA_CMOD_INSTALLDIR)"
+	install -Dm755 $< "$(DESTDIR)$(LUA_CMOD_INSTALLDIR)/$<"
+endif
+
+.PHONY: all depsclean install test gdb valgrind
