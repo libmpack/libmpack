@@ -102,7 +102,7 @@ MPACK_API void mpack_parser_copy(mpack_parser_t *dst, mpack_parser_t *src)
   mpack_uint32_t dst_capacity = dst->capacity; 
   assert(src->capacity <= dst_capacity);
   /* copy all fields except the stack */
-  memcpy(dst, src, sizeof(MPACK_PARSER_STRUCT(0)) - sizeof(mpack_node_t));
+  memcpy(dst, src, sizeof(mpack_one_parser_t) - sizeof(mpack_node_t));
   /* reset capacity */
   dst->capacity = dst_capacity;
   /* copy the stack */

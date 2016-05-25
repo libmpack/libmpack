@@ -242,7 +242,7 @@ MPACK_API void mpack_rpc_session_copy(mpack_rpc_session_t *dst,
   mpack_uint32_t dst_capacity = dst->capacity; 
   assert(src->capacity <= dst_capacity);
   /* copy all fields except slots */
-  memcpy(dst, src, sizeof(MPACK_RPC_SESSION_STRUCT(1)) -
+  memcpy(dst, src, sizeof(mpack_rpc_one_session_t) -
       sizeof(struct mpack_rpc_slot_s));
   /* reset capacity */
   dst->capacity = dst_capacity;

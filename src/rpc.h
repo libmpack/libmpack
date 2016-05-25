@@ -46,9 +46,13 @@ struct mpack_rpc_slot_s {
     struct mpack_rpc_slot_s slots[c];    \
   }
 
+/* Some compilers warn against anonymous structs:
+ * https://github.com/tarruda/libmpack/issues/6 */
+typedef MPACK_RPC_SESSION_STRUCT(1) mpack_rpc_one_session_t;
+
 #define MPACK_RPC_SESSION_STRUCT_SIZE(c)        \
   (sizeof(struct mpack_rpc_slot_s) * (c - 1) +  \
-   sizeof(MPACK_RPC_SESSION_STRUCT(1)))
+   sizeof(mpack_rpc_one_session_t))
 
 typedef MPACK_RPC_SESSION_STRUCT(MPACK_RPC_MAX_REQUESTS) mpack_rpc_session_t;
 
