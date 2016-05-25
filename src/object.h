@@ -44,9 +44,13 @@ typedef struct mpack_node_s {
     mpack_node_t items[c + 1];      \
   }
 
+/* Some compilers warn against anonymous structs:
+ * https://github.com/tarruda/libmpack/issues/6 */
+typedef MPACK_PARSER_STRUCT(0) mpack_one_parser_t;
+
 #define MPACK_PARSER_STRUCT_SIZE(c) \
   (sizeof(mpack_node_t) * c +       \
-   sizeof(MPACK_PARSER_STRUCT(0)))
+   sizeof(mpack_one_parser_t))
 
 typedef MPACK_PARSER_STRUCT(MPACK_MAX_OBJECT_DEPTH) mpack_parser_t;
 typedef void(*mpack_walk_cb)(mpack_parser_t *w, mpack_node_t *n);
