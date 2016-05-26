@@ -63,12 +63,12 @@ test: $(BUSTED) $(MPACK)
 valgrind: $(BUSTED) $(MPACK)
 	eval $$($(LUAROCKS) path); \
 	valgrind $(VALGRIND_OPTS) $(LUA) \
-		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc11-0/bin/busted test.lua
+		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc12-1/bin/busted test.lua
 
 gdb: $(BUSTED) $(MPACK)
 	eval $$($(LUAROCKS) path); \
 	gdb -x .gdb --args $(LUA) \
-		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc11-0/bin/busted test.lua
+		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc12-1/bin/busted test.lua
 
 ifeq ($(USE_SYSTEM_LUA),no)
 $(MPACK): $(LUAROCKS) lmpack.c
@@ -79,7 +79,16 @@ $(MPACK): lmpack.c
 endif
 
 $(BUSTED): $(LUAROCKS)
-	$(LUAROCKS) install busted
+	$(LUAROCKS) install penlight 1.3.2-2
+	$(LUAROCKS) install lua-term 0.7-1
+	$(LUAROCKS) install dkjson 2.5-2
+	$(LUAROCKS) install lua_cliargs 3.0-1
+	$(LUAROCKS) install say 1.3-1
+	$(LUAROCKS) install luafilesystem 1.6.3-2
+	$(LUAROCKS) install luassert 1.7.10-0
+	$(LUAROCKS) install mediator_lua 1.1.2-0
+	$(LUAROCKS) install luasystem 0.2.0-0
+	$(LUAROCKS) install busted 2.0.rc12-1
 	$(LUAROCKS) install inspect  # helpful for debugging
 
 $(LUAROCKS): $(LUA)
