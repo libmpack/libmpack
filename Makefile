@@ -90,7 +90,7 @@ test: test-bin
 
 .PHONY: gdb
 gdb: test-bin
-	gdb -x .gdb $(TEXE)
+	$(LIBTOOL) --mode=execute gdb -x .gdb $(TEXE)
 
 .PHONY: coverage
 coverage: tools $(COVOUT)
