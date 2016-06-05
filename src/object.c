@@ -13,6 +13,7 @@ MPACK_API void mpack_parser_init(mpack_parser_t *parser,
   parser->data.p = NULL;
   parser->capacity = capacity ? capacity : MPACK_MAX_OBJECT_DEPTH;
   parser->size = 0;
+  parser->exiting = 0;
   memset(parser->items, 0, sizeof(mpack_node_t) * (parser->capacity + 1));
   parser->items[0].pos = (size_t)-1;
   parser->status = 0;
@@ -22,10 +23,15 @@ MPACK_API void mpack_parser_init(mpack_parser_t *parser,
   do {                                                                      \
     mpack_node_t *n;                                                        \
                                                                             \
+    if (parser->exiting) goto exit;                                         \
     if (mpack_parser_full(parser)) return MPACK_NOMEM;                      \
     n = mpack_parser_push(parser);                                          \
     action;                                                                 \
+    parser->exiting = 1;                                                    \
+    return MPACK_EOF;                                                       \
                                                                             \
+exit:                                                                       \
+    parser->exiting = 0;                                                    \
     while ((n = mpack_parser_pop(parser))) {                                \
       exit_cb(parser, n);                                                   \
       if (!parser->size) return MPACK_OK;                                   \
@@ -57,14 +63,17 @@ MPACK_API int mpack_parse(mpack_parser_t *parser, const char **buf,
     const char *buf_save = *buf;
     size_t buflen_save = *buflen;
 
-    if ((status = mpack_read(tb, buf, buflen, &tok)) == MPACK_OK) {
+    if ((status = mpack_read(tb, buf, buflen, &tok)) != MPACK_OK) continue;
+
+    do {
       status = mpack_parse_tok(parser, tok, enter_cb, exit_cb);
-      if (status == MPACK_NOMEM) {
-        /* restore buf/buflen so the next call will read the same token */
-        *buf = buf_save;
-        *buflen = buflen_save;
-        break;
-      }
+    } while (parser->exiting);
+
+    if (status == MPACK_NOMEM) {
+      /* restore buf/buflen so the next call will read the same token */
+      *buf = buf_save;
+      *buflen = buflen_save;
+      break;
     }
   }
 
@@ -89,8 +98,10 @@ MPACK_API int mpack_unparse(mpack_parser_t *parser, char **buf, size_t *buflen,
     if (status == MPACK_NOMEM)
       break;
 
-    write_status = mpack_write(tb, buf, buflen, &tok);
-    status = write_status ? write_status : status;
+    if (parser->exiting) {
+      write_status = mpack_write(tb, buf, buflen, &tok);
+      status = write_status ? write_status : status;
+    }
   }
 
   return status;

@@ -40,6 +40,7 @@ typedef struct mpack_node_s {
     mpack_data_t data;              \
     mpack_uint32_t size, capacity;  \
     int status;                     \
+    int exiting;                    \
     mpack_tokbuf_t tokbuf;          \
     mpack_node_t items[c + 1];      \
   }
