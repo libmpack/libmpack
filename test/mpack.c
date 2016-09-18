@@ -339,8 +339,7 @@ static void signed_positive_packs_with_unsigned_format(void)
   char mpackbuf[256];
   char *buf = mpackbuf;
   size_t buflen = sizeof(mpackbuf);
-  mpack_tokbuf_t writer;
-  mpack_tokbuf_init(&writer);
+  mpack_tokbuf_t writer = MPACK_TOKBUF_INITIAL_VALUE;
   tokbuf[tokbufpos++] = mpack_pack_sint(0);
   tokbuf[tokbufpos++] = mpack_pack_sint(1);
   tokbuf[tokbufpos++] = mpack_pack_sint(0x7f);

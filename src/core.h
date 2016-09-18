@@ -76,6 +76,8 @@ typedef struct mpack_tokbuf_s {
   mpack_uint32_t passthrough;
 } mpack_tokbuf_t;
 
+#define MPACK_TOKBUF_INITIAL_VALUE { { 0 }, { 0, 0, { { 0, 0 } } }, 0, 0, 0 }
+
 MPACK_API void mpack_tokbuf_init(mpack_tokbuf_t *tb) FUNUSED FNONULL;
 MPACK_API int mpack_read(mpack_tokbuf_t *tb, const char **b, size_t *bl,
     mpack_token_t *tok) FUNUSED FNONULL;
