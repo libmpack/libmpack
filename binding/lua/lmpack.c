@@ -420,7 +420,7 @@ static int lmpack_unpacker_unpack(lua_State *L)
 {
   int result, argc;
   lua_Number startpos;
-  size_t len;
+  size_t len, offset;
   const char *str, *str_init;
   Unpacker *unpacker;
   
@@ -439,7 +439,9 @@ static int lmpack_unpacker_unpack(lua_State *L)
   luaL_argcheck(L, (size_t)startpos <= len, 3,
       "start position must be less than or equal to the input string length");
 
-  str += (size_t)startpos - 1;
+  offset = (size_t)startpos - 1 ;
+  str += offset;
+  len -= offset;
   result = lmpack_unpacker_unpack_str(L, unpacker, &str, &len);
 
   if (result == MPACK_EOF)
