@@ -77,6 +77,14 @@ matrix:
       script:
         - make config=amalgamation
         - if ! make MPACK_LUA_VERSION=5.3.3 -C binding/lua ci-test; then cat binding/lua/valgrind.log; exit 1; fi
+    - os: linux
+      env: CONFIG=python2-binding
+      script:
+        - cd binding/python && ./ci.sh
+    - os: linux
+      env: CONFIG=python3-binding
+      script:
+        - cd binding/python && ./ci.sh
 
 script:
   make config=${CONFIG} test

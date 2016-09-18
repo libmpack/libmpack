@@ -1,0 +1,7 @@
+build/
+mpack-src/
+cython_debug/
+*.so
+*.c
+*.h
+cmpack.pxd
