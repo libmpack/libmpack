@@ -27,7 +27,7 @@
 #define UNPACKER_META_NAME "mpack.Unpacker"
 #define PACKER_META_NAME "mpack.Packer"
 #define SESSION_META_NAME "mpack.Session"
-#define NIL_NAME "mpack.Nil"
+#define NIL_NAME "mpack.NIL"
 
 #if LUA_VERSION_NUM > 501
 /* 
@@ -972,6 +972,12 @@ static int lmpack_session_notify(lua_State *L)
   return 1;
 }
 
+static int lmpack_nil_tostring(lua_State* L)
+{
+  lua_pushfstring(L, NIL_NAME, lua_topointer(L, 1));
+  return 1;
+}
+
 static int lmpack_unpack(lua_State *L)
 {
   int result;
@@ -1113,8 +1119,16 @@ int luaopen_mpack(lua_State *L)
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, "__index");
   luaL_register(L, NULL, session_methods);
+  /* NIL */
+  luaL_newmetatable(L, NIL_NAME);
+  lua_pushstring(L, "__tostring");
+  lua_pushcfunction(L, lmpack_nil_tostring);
+  lua_settable(L, -3);
   /* Use a constant userdata to represent NIL */
   (void)lua_newuserdata(L, sizeof(void *));
+  /* Assign the metatable to the userdata object */
+  luaL_getmetatable(L, NIL_NAME);
+  lua_setmetatable(L, -2);
   /* Save NIL on the registry so we can access it easily from other functions */
   lua_setfield(L, LUA_REGISTRYINDEX, NIL_NAME);
   /* module */
