@@ -433,6 +433,7 @@ static int lmpack_unpacker_unpack(lua_State *L)
     return luaL_error(L, "expecting between 2 and 3 arguments"); 
 
   unpacker = lmpack_check_unpacker(L, 1);
+  unpacker->L = L;
 
   str_init = str = luaL_checklstring(L, 2, &len);
   startpos = lua_gettop(L) == 3 ? luaL_checknumber(L, 3) : 1;
@@ -720,6 +721,7 @@ static int lmpack_packer_pack(lua_State *L)
     return luaL_error(L, "expecting exactly 2 arguments"); 
 
   packer = lmpack_check_packer(L, 1);
+  packer->L = L;
   packer->root = lmpack_ref(L, packer->reg);
   luaL_buffinit(L, &buffer);
   b = luaL_prepbuffer(&buffer);
@@ -831,6 +833,7 @@ static int lmpack_session_receive(lua_State *L)
   if (session->unpacker != LUA_REFNIL) {
     lmpack_geti(L, session->reg, session->unpacker);
     unpacker = lmpack_check_unpacker(L, -1);
+    unpacker->L = L;
     rcount += 2;
     lua_pop(L, 1);
   }

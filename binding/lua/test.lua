@@ -96,6 +96,14 @@ describe('mpack', function()
         assert.are_same(object, unpacked)
       end)
     end)
+
+    describe('when used across coroutine boundaries', function()
+      it('has the same behavior as when not', function()
+        unpacked, pos = coroutine.wrap(function() return unpack(msgpack) end)()
+        assert.are_same(object, unpacked)
+        assert.are_same(#msgpack + 1, pos)
+      end)
+    end)
   end)
 
   describe('pack', function()
@@ -112,6 +120,15 @@ describe('mpack', function()
         -- there's no guarantee that the order the keys are packed packed will
         -- the same as the one in the `msgpack` variable. verify that pack
         -- works, we unpack it and compare with `object`
+        local unpack = mpack.Unpacker()
+        local o = unpack(packed)
+        assert.are_same(object, o)
+      end)
+    end)
+
+    describe('when used across coroutine boundaries', function()
+      it('has the same behavior as when not', function()
+        packed = coroutine.wrap(function() return pack(object) end)()
         local unpack = mpack.Unpacker()
         local o = unpack(packed)
         assert.are_same(object, o)
@@ -365,6 +382,15 @@ describe('mpack', function()
       assert.are_same({nil, nil, nil, nil, 2}, {session:receive(fhex('a1'))})
       assert.are_same({'notification', nil, 'method', {1, 'a'}, 2},
         {session:receive(fhex('61'))})
+    end)
+
+    describe('when used across coroutine boundaries', function()
+      it('has the same behavior as when not', function()
+        local input = fhex('94 00 00 a6 6d 65 74 68 6f 64 92 01 a1 61')
+        local received = {'request', 0, 'method', {1, 'a'}, 15}
+        local session = mpack.Session({unpack = mpack.Unpacker()})
+        assert.are_same(received, coroutine.wrap(function() return {session:receive(input)} end)())
+      end)
     end)
 
     it('grows session capacity', function()
