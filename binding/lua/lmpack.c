@@ -30,6 +30,11 @@
 #define NIL_NAME "mpack.Nil"
 
 #if LUA_VERSION_NUM > 501
+/* 
+ * TODO(tarruda): When targeting lua 5.3 and being compiled with `long long`
+ * support(not -ansi), we should make use of lua 64 bit integers for
+ * representing msgpack integers, since `double` can't represent the full range.
+ */
 typedef luaL_Reg luaL_reg;
 #define luaL_register(L, name, lreg) (luaL_setfuncs((L), (lreg), 0))
 #define lua_objlen(L, idx) (lua_rawlen(L, (idx)))

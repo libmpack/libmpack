@@ -18,7 +18,7 @@ ifneq "$(strip $(findstring clang,$(CC)))" ""
   # When CC is set to clang-${VERSION}, it is very likely that other llvm
   # tools are installed with the same version suffix, so use it for
   # llvm-symbolizer
-  SYMBOLIZER ?= $(shell which $(subst clang,llvm-symbolizer,$(CC)))
+  SYMBOLIZER ?= $(shell realpath $$(which $(subst clang,llvm-symbolizer,$(CC))))
 endif
 
 SYMBOLIZER ?= /usr/bin/llvm-symbolizer
@@ -73,7 +73,7 @@ all: lib-bin test-bin
 include .config/$(config).mk
 
 .PHONY: tools
-tools: $(COMPILER) $(RUNNER)
+tools: $(C_COMPILER) $(RUNNER)
 
 .PHONY: amalgamation
 amalgamation: $(AMALG)

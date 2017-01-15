@@ -4,15 +4,14 @@
 USE_SYSTEM_LUA ?= no
 
 # Lua-related configuration
-LUA_VERSION_MAJ_MIN ?= 5.1
-LUA_VERSION ?= $(LUA_VERSION_MAJ_MIN).5
-LUA_VERSION_NOPATCH = $(shell echo -n $(LUA_VERSION) | sed 's!\([0-9]\.[0-9]\).[0-9]!\1!')
-LUA_URL ?= https://github.com/lua/lua/releases/download/$(LUA_VERSION)/lua-$(LUA_VERSION).tar.gz
+MPACK_LUA_VERSION ?= 5.1.5
+MPACK_LUA_VERSION_NOPATCH = $(shell echo -n $(MPACK_LUA_VERSION) | sed 's!\([0-9]\.[0-9]\).[0-9]!\1!')
+LUA_URL ?= https://lua.org/ftp/lua-$(MPACK_LUA_VERSION).tar.gz
 LUAROCKS_URL ?= https://github.com/keplerproject/luarocks/archive/v2.2.0.tar.gz
 LUA_TARGET ?= linux
 
 # deps location
-DEPS_DIR ?= $(shell pwd)/.deps/$(LUA_VERSION)
+DEPS_DIR ?= $(shell pwd)/.deps/$(MPACK_LUA_VERSION)
 DEPS_PREFIX ?= $(DEPS_DIR)/usr
 DEPS_BIN ?= $(DEPS_PREFIX)/bin
 
@@ -21,7 +20,7 @@ LUA ?= $(DEPS_BIN)/lua
 LUAROCKS ?= $(DEPS_BIN)/luarocks
 BUSTED ?= $(DEPS_BIN)/busted
 ifeq ($(USE_SYSTEM_LUA),no)
-MPACK ?= $(DEPS_PREFIX)/lib/lua/$(LUA_VERSION_NOPATCH)/mpack.so
+MPACK ?= $(DEPS_PREFIX)/lib/lua/$(MPACK_LUA_VERSION_NOPATCH)/mpack.so
 else
 MPACK ?= mpack.so
 endif
@@ -32,13 +31,18 @@ PKG_CONFIG ?= pkg-config
 CFLAGS ?= -ansi -O0 -g3 -Wall -Wextra -Werror -Wconversion \
 	-Wstrict-prototypes -Wno-unused-parameter -pedantic
 CFLAGS += -fPIC -DMPACK_DEBUG_REGISTRY_LEAK
+ifeq ($(MPACK_LUA_VERSION_NOPATCH),5.3)
+# Lua 5.3 has integer type, which is not 64 bits for -ansi since c89 doesn't
+# have `long long` type.
+CFLAGS += -DLUA_C89_NUMBERS
+endif
 
-LUA_INCLUDE := $(shell $(PKG_CONFIG) --cflags lua-$(LUA_VERSION_MAJ_MIN) 2>/dev/null || echo "-I/usr/include/lua$(LUA_VERSION_MAJ_MIN)")
-LUA_LIB := $(shell $(PKG_CONFIG) --libs lua-$(LUA_VERSION_MAJ_MIN) 2>/dev/null || echo "-llua$(LUA_VERSION_MAJ_MIN)")
+LUA_INCLUDE := $(shell $(PKG_CONFIG) --cflags lua-$(MPACK_LUA_VERSION_NOPATCH) 2>/dev/null || echo "-I/usr/include/lua$(MPACK_LUA_VERSION_NOPATCH)")
+LUA_LIB := $(shell $(PKG_CONFIG) --libs lua-$(MPACK_LUA_VERSION_NOPATCH) 2>/dev/null || echo "-llua$(MPACK_LUA_VERSION_NOPATCH)")
 INCLUDES = $(LUA_INCLUDE)
 LIBS = $(LUA_LIB)
 
-LUA_CMOD_INSTALLDIR := $(shell $(PKG_CONFIG) --variable=INSTALL_CMOD lua-$(LUA_VERSION_MAJ_MIN) 2>/dev/null || echo "/usr/lib/lua/$(LUA_VERSION_MAJ_MIN)")
+LUA_CMOD_INSTALLDIR := $(shell $(PKG_CONFIG) --variable=INSTALL_CMOD lua-$(MPACK_LUA_VERSION_NOPATCH) 2>/dev/null || echo "/usr/lib/lua/$(MPACK_LUA_VERSION_NOPATCH)")
 
 
 # Misc
@@ -64,6 +68,9 @@ valgrind: $(BUSTED) $(MPACK)
 	eval $$($(LUAROCKS) path); \
 	valgrind $(VALGRIND_OPTS) $(LUA) \
 		$(DEPS_PREFIX)/lib/luarocks/rocks/busted/2.0.rc12-1/bin/busted test.lua
+
+ci-test: valgrind
+	$(LUA) leak_test.lua
 
 gdb: $(BUSTED) $(MPACK)
 	eval $$($(LUAROCKS) path); \
@@ -113,4 +120,4 @@ else
 	install -Dm755 $< "$(DESTDIR)$(LUA_CMOD_INSTALLDIR)/$<"
 endif
 
-.PHONY: all depsclean install test gdb valgrind
+.PHONY: all depsclean install test gdb valgrind ci-test
