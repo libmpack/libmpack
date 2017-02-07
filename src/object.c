@@ -19,6 +19,13 @@ MPACK_API void mpack_parser_init(mpack_parser_t *parser,
   parser->status = 0;
 }
 
+#define MPACK_EXCEPTION_CHECK(parser)                                           \
+  do {                                                                      \
+    if (parser->status == MPACK_EXCEPTION) {                                    \
+      return MPACK_EXCEPTION;                                                   \
+    }                                                                       \
+  } while (0)
+
 #define MPACK_WALK(action)                                                  \
   do {                                                                      \
     mpack_node_t *n;                                                        \
@@ -27,6 +34,7 @@ MPACK_API void mpack_parser_init(mpack_parser_t *parser,
     if (mpack_parser_full(parser)) return MPACK_NOMEM;                      \
     n = mpack_parser_push(parser);                                          \
     action;                                                                 \
+    MPACK_EXCEPTION_CHECK(parser);                                              \
     parser->exiting = 1;                                                    \
     return MPACK_EOF;                                                       \
                                                                             \
@@ -34,6 +42,7 @@ exit:                                                                       \
     parser->exiting = 0;                                                    \
     while ((n = mpack_parser_pop(parser))) {                                \
       exit_cb(parser, n);                                                   \
+      MPACK_EXCEPTION_CHECK(parser);                                            \
       if (!parser->size) return MPACK_OK;                                   \
     }                                                                       \
                                                                             \
@@ -43,12 +52,14 @@ exit:                                                                       \
 MPACK_API int mpack_parse_tok(mpack_parser_t *parser, mpack_token_t tok,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
 {
+  MPACK_EXCEPTION_CHECK(parser);
   MPACK_WALK({n->tok = tok; enter_cb(parser, n);});
 }
 
 MPACK_API int mpack_unparse_tok(mpack_parser_t *parser, mpack_token_t *tok,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
 {
+  MPACK_EXCEPTION_CHECK(parser);
   MPACK_WALK({enter_cb(parser, n); *tok = n->tok;});
 }
 
@@ -56,6 +67,7 @@ MPACK_API int mpack_parse(mpack_parser_t *parser, const char **buf,
     size_t *buflen, mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
 {
   int status = MPACK_EOF;
+  MPACK_EXCEPTION_CHECK(parser);
 
   while (*buflen && status) {
     mpack_token_t tok;
@@ -67,6 +79,7 @@ MPACK_API int mpack_parse(mpack_parser_t *parser, const char **buf,
 
     do {
       status = mpack_parse_tok(parser, tok, enter_cb, exit_cb);
+      MPACK_EXCEPTION_CHECK(parser);
     } while (parser->exiting);
 
     if (status == MPACK_NOMEM) {
@@ -84,6 +97,7 @@ MPACK_API int mpack_unparse(mpack_parser_t *parser, char **buf, size_t *buflen,
     mpack_walk_cb enter_cb, mpack_walk_cb exit_cb)
 {
   int status = MPACK_EOF;
+  MPACK_EXCEPTION_CHECK(parser);
 
   while (*buflen && status) {
     int write_status;
@@ -92,6 +106,8 @@ MPACK_API int mpack_unparse(mpack_parser_t *parser, char **buf, size_t *buflen,
 
     if (!tb->plen)
       parser->status = mpack_unparse_tok(parser, &tok, enter_cb, exit_cb);
+
+    MPACK_EXCEPTION_CHECK(parser);
 
     status = parser->status;
 

@@ -33,6 +33,7 @@
 static char buf[0xffffff];
 static size_t bufpos;
 static bool number_conv = false;
+static bool throw = false;
 
 static mpack_data_t d(void *p)
 {
@@ -105,6 +106,9 @@ static void unparse_enter(mpack_parser_t *parser, mpack_node_t *node)
     case '.':
     case '+':
     case '-': {
+      if (throw) {
+        MPACK_THROW(parser);
+      }
       char *p2 = p;
       double d = strtod(p, &p2);
       size_t l = (size_t)(p2 - p);
@@ -200,6 +204,7 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     case MPACK_TOKEN_BOOLEAN:
       w(mpack_unpack_boolean(*t) ? "true" : "false"); break;
     case MPACK_TOKEN_UINT:
+      if (throw) MPACK_THROW(parser);
       if (number_conv) goto nconv;
       w("%" UFORMAT, mpack_unpack_uint(*t)); break;
     case MPACK_TOKEN_SINT:
@@ -477,6 +482,51 @@ static void unparsing_very_deep_objects_returns_enomem(void)
   cmp_mem(e3, buf, 3);
 }
 
+static void parse_throw(void)
+{
+  bufpos = 0;
+  mpack_parser_t parser;
+  mpack_parser_init(&parser, 0);
+  const uint8_t input[] = {0x91, 0x91, 0x01};  /* [[1]] */
+  const char *b = (const char *)input;
+  size_t bl = sizeof(input);
+  ok(mpack_parse((mpack_parser_t *)&parser, &b, &bl, parse_enter, parse_exit)
+      == MPACK_OK);
+  b = (const char *)input;
+  bl = sizeof(input);
+  throw = true;
+  ok(mpack_parse((mpack_parser_t *)&parser, &b, &bl, parse_enter, parse_exit)
+      == MPACK_EXCEPTION);
+  b = (const char *)input;
+  bl = sizeof(input);
+  throw = false;
+  ok(mpack_parse((mpack_parser_t *)&parser, &b, &bl, parse_enter, parse_exit)
+      == MPACK_EXCEPTION, "throw will invalidate the parser");
+}
+
+static void unparse_throw(void)
+{
+  mpack_parser_t parser;
+  mpack_parser_init(&parser, 0);
+  char input[] = "[[1]]";
+  uint8_t buf[16];
+  char *b = (char *)buf;
+  size_t bl = sizeof(buf);
+  parser.data.p = input;
+  ok(mpack_unparse((mpack_parser_t *)&parser, &b, &bl, unparse_enter,
+        unparse_exit) == MPACK_OK);
+  b = (char *)buf;
+  bl = sizeof(buf);
+  throw = true;
+  ok(mpack_unparse((mpack_parser_t *)&parser, &b, &bl, unparse_enter,
+        unparse_exit) == MPACK_EXCEPTION);
+  b = (char *)buf;
+  bl = sizeof(buf);
+  throw = false;
+  ok(mpack_unparse((mpack_parser_t *)&parser, &b, &bl, unparse_enter,
+        unparse_exit) == MPACK_EXCEPTION, "throw will invalidate the parser");
+}
+
 static void does_not_write_invalid_tokens(void)
 {
   mpack_tokbuf_t writer;
@@ -683,6 +733,8 @@ int main(void)
   unpacking_c1_returns_eread();
   parsing_very_deep_objects_returns_enomem();
   unparsing_very_deep_objects_returns_enomem();
+  parse_throw();
+  unparse_throw();
   does_not_write_invalid_tokens();
   rpc_copy_session_maintains_state();
   rpc_request_id_wrap();
