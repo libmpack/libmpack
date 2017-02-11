@@ -39,7 +39,7 @@ matrix:
       env:
         - CONFIG=armeb CFLAGS='-DNDEBUG -g --coverage -Werror' LDFLAGS=--coverage
       before_install:
-        - pip install --user cpp-coveralls
+        - pip install --user cpp-coveralls 'requests[security]'
       after_success:
         - coveralls -b . --gcov $(pwd)/.deps/usr/bin/armeb-linux-gnueabihf-gcov --gcov-options '\-lp'
     - os: osx

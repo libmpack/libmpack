@@ -10,7 +10,14 @@
 
 #define MPACK_PARENT_NODE(n) (((n) - 1)->pos == (size_t)-1 ? NULL : (n) - 1)
 
+#define MPACK_THROW(parser)           \
+  do {                                \
+    parser->status = MPACK_EXCEPTION; \
+    return;                           \
+  } while (0)
+
 enum {
+  MPACK_EXCEPTION = -1,
   MPACK_NOMEM = MPACK_ERROR + 1
 };
 
@@ -29,7 +36,7 @@ typedef struct mpack_node_s {
   size_t pos;
   /* flag to determine if the key was visited when traversing a map */
   int key_visited;
-  /* allow 2 instances mpack_data_t per node. the rationale is that when
+  /* allow 2 instances mpack_data_t per node. the reason is that when
    * serializing, the user may need to keep track of traversal state besides the
    * parent node reference */
   mpack_data_t data[2];
