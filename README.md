@@ -1,7 +1,7 @@
 ## libmpack
 
-[![Travis Build Status](https://travis-ci.org/tarruda/libmpack.svg?branch=master)](https://travis-ci.org/tarruda/libmpack)
-[![Coverage Status](https://coveralls.io/repos/tarruda/libmpack/badge.svg?branch=master&service=github)](https://coveralls.io/github/tarruda/libmpack?branch=master)
+[![Travis Build Status](https://travis-ci.org/libmpack/libmpack.svg?branch=master)](https://travis-ci.org/libmpack/libmpack)
+[![Coverage Status](https://coveralls.io/repos/libmpack/libmpack/badge.svg?branch=master&service=github)](https://coveralls.io/github/libmpack/libmpack?branch=master)
 
 ### Introduction
 
@@ -60,7 +60,7 @@ Here's a few extras that may or not overlap with what msgpack-c provides:
   and its CI infrastructure automatically tests it on a big endian platform.
 
 * Well tested, it should always have about 100% code coverage:
-  https://coveralls.io/github/tarruda/libmpack?branch=master
+  https://coveralls.io/github/libmpack/libmpack?branch=master
 
 * Relatively small footprint: The amalgamation(headers + code) is less than 2k
   lines of C. The whole library can be inlined when compiled with -O3(Though
