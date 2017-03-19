@@ -53,7 +53,7 @@ typedef struct mpack_node_s {
   }
 
 /* Some compilers warn against anonymous structs:
- * https://github.com/tarruda/libmpack/issues/6 */
+ * https://github.com/libmpack/libmpack/issues/6 */
 typedef MPACK_PARSER_STRUCT(0) mpack_one_parser_t;
 
 #define MPACK_PARSER_STRUCT_SIZE(c) \

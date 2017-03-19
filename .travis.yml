@@ -45,38 +45,6 @@ matrix:
     - os: osx
       env: CONFIG=release
       compiler: gcc
-    # lua binding builds(TODO: this is starting to get messy, lua binding should
-    # probably be moved into its own repository)
-    - os: linux
-      compiler: gcc
-      env: CONFIG=lua-5.1-binding  # set for the description in travis UI
-      addons:
-        apt:
-          packages:
-            - valgrind
-      script:
-        - make config=amalgamation
-        - if ! make MPACK_LUA_VERSION=5.1.5 -C binding/lua ci-test; then cat binding/lua/valgrind.log; exit 1; fi
-    - os: linux
-      compiler: gcc
-      env: CONFIG=lua-5.2-binding  # set for the description in travis UI
-      addons:
-        apt:
-          packages:
-            - valgrind
-      script:
-        - make config=amalgamation
-        - if ! make MPACK_LUA_VERSION=5.2.4 -C binding/lua ci-test; then cat binding/lua/valgrind.log; exit 1; fi
-    - os: linux
-      compiler: gcc
-      env: CONFIG=lua-5.3-binding  # set for the description in travis UI
-      addons:
-        apt:
-          packages:
-            - valgrind
-      script:
-        - make config=amalgamation
-        - if ! make MPACK_LUA_VERSION=5.3.3 -C binding/lua ci-test; then cat binding/lua/valgrind.log; exit 1; fi
 
 script:
   make config=${CONFIG} test
@@ -84,9 +52,6 @@ script:
 cache:
   directories:
     - .deps/usr
-    - binding/lua/.deps/5.1.5/usr
-    - binding/lua/.deps/5.2.4/usr
-    - binding/lua/.deps/5.3.3/usr
 
 after_failure:
   cat asan.* ubsan.* msan.* || true
