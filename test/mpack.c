@@ -428,15 +428,12 @@ static void positive_signed_format_unpacks_as_unsigned(void)
 
 static void unpacking_c1_returns_eread(void)
 {
-  mpack_tokbuf_t reader;
   const uint8_t input[] = {0xc1};
   const char *inp = (const char *)input;
   size_t inplen = sizeof(input);
-  mpack_token_t tok;
-  mpack_tokbuf_init(&reader);
   mpack_parser_t parser;
   mpack_parser_init(&parser, 0);
-  int res = mpack_read(&reader, &inp, &inplen, &tok);
+  int res = mpack_parse(&parser, &inp, &inplen, parse_enter, parse_exit);
   ok(res == MPACK_ERROR, "0xc1 returns MPACK_ERROR");
 }
 

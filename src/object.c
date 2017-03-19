@@ -75,19 +75,21 @@ MPACK_API int mpack_parse(mpack_parser_t *parser, const char **buf,
     const char *buf_save = *buf;
     size_t buflen_save = *buflen;
 
-    if ((status = mpack_read(tb, buf, buflen, &tok)) != MPACK_OK) continue;
+    if ((status = mpack_read(tb, buf, buflen, &tok)) == MPACK_EOF) continue;
+    else if (status == MPACK_ERROR) goto rollback;
 
     do {
       status = mpack_parse_tok(parser, tok, enter_cb, exit_cb);
       MPACK_EXCEPTION_CHECK(parser);
     } while (parser->exiting);
 
-    if (status == MPACK_NOMEM) {
-      /* restore buf/buflen so the next call will read the same token */
-      *buf = buf_save;
-      *buflen = buflen_save;
-      break;
-    }
+    if (status != MPACK_NOMEM) continue;
+
+rollback:
+    /* restore buf/buflen so the next call will try to read the same token */
+    *buf = buf_save;
+    *buflen = buflen_save;
+    break;
   }
 
   return status;
