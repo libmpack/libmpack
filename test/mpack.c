@@ -197,6 +197,7 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
   mpack_node_t *parent = MPACK_PARENT_NODE(node);
   mpack_token_t *t = &node->tok;
   mpack_token_t *p = parent ? &parent->tok : NULL;
+  double d, d2;
 
   switch (t->type) {
     case MPACK_TOKEN_NIL:
@@ -213,7 +214,7 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     case MPACK_TOKEN_FLOAT: {
       if (number_conv) goto nconv;
       /* test both unpack_float implementations */
-      double d = mpack_unpack_float_fast(*t),d2 = mpack_unpack_float_compat(*t);
+      d = mpack_unpack_float_fast(*t),d2 = mpack_unpack_float_compat(*t);
       (void)(d2);
       assert(d == d2);
       w("%.*g", 17, d);
@@ -244,7 +245,6 @@ static void parse_enter(mpack_parser_t *parser, mpack_node_t *node)
   }
   return;
 
-  double d;
 nconv:
   d = mpack_unpack_number(*t);
   w("%.*g", 17, d);
