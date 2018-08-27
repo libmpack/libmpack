@@ -10,6 +10,10 @@ libmpack is a small binary serialization/RPC library that implements both the
 [msgpack-rpc](https://github.com/msgpack-rpc/msgpack-rpc/blob/master/spec.md)
 specifications.
 
+### Concepts
+
+See [libmpack-python](https://github.com/libmpack/libmpack-python#usage) for an overview, in particular the [RPC](https://github.com/libmpack/libmpack-python#rpc) section explains the lifecycle of a libmpack Session.
+
 ### Rationale
 
 While there's already a [msgpack-c](https://github.com/msgpack/msgpack-c)
