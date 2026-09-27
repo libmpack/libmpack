@@ -426,6 +426,56 @@ static void positive_signed_format_unpacks_as_unsigned(void)
       "positive signed format unpacks as unsigned(tokens)");
 }
 
+static void pack_number_non_finite_packs_as_float(void)
+{
+  char mpackbuf[256];
+  char *buf = mpackbuf;
+  size_t buflen = sizeof(mpackbuf);
+  mpack_tokbuf_t writer = MPACK_TOKBUF_INITIAL_VALUE;
+  mpack_tokbuf_t reader = MPACK_TOKBUF_INITIAL_VALUE;
+  mpack_token_t tok = mpack_pack_number(INFINITY);
+  mpack_write(&writer, &buf, &buflen, &tok);
+  tok = mpack_pack_number(-INFINITY);
+  mpack_write(&writer, &buf, &buflen, &tok);
+  uint8_t expected[] = {
+    0xca, 0x7f, 0x80, 0x00, 0x00,
+    0xca, 0xff, 0x80, 0x00, 0x00
+  };
+  cmp_mem(mpackbuf, expected, sizeof(mpackbuf) - buflen,
+      "pack_number packs infinities as float");
+  tok = mpack_pack_number(NAN);
+  ok(tok.type == MPACK_TOKEN_FLOAT, "pack_number packs NaN as float");
+  buf = mpackbuf;
+  buflen = sizeof(mpackbuf);
+  mpack_write(&writer, &buf, &buflen, &tok);
+  const char *inp = mpackbuf;
+  size_t inplen = sizeof(mpackbuf) - buflen;
+  mpack_read(&reader, &inp, &inplen, &tok);
+  ok(isnan(mpack_unpack_number(tok)), "NaN round-trips through pack_number");
+}
+
+static void unpacked_negative_int32_repacks_correctly(void)
+{
+  /* tokens returned by mpack_read are not sign-extended to 64 bits */
+  const uint8_t input[] = {0xd2, 0xff, 0xff, 0xff, 0xfb};  /* -5 */
+  const char *inp = (const char *)input;
+  size_t inplen = sizeof(input);
+  char mpackbuf[16];
+  char *buf = mpackbuf;
+  size_t buflen = sizeof(mpackbuf);
+  mpack_tokbuf_t reader = MPACK_TOKBUF_INITIAL_VALUE;
+  mpack_tokbuf_t writer = MPACK_TOKBUF_INITIAL_VALUE;
+  mpack_token_t tok;
+  mpack_read(&reader, &inp, &inplen, &tok);
+  mpack_write(&writer, &buf, &buflen, &tok);
+  mpack_tokbuf_init(&reader);
+  inp = mpackbuf;
+  inplen = sizeof(mpackbuf) - buflen;
+  mpack_read(&reader, &inp, &inplen, &tok);
+  ok(tok.type == MPACK_TOKEN_SINT && mpack_unpack_number(tok) == -5,
+      "unpacked negative int32 repacks correctly");
+}
+
 static void unpacking_c1_returns_eread(void)
 {
   const uint8_t input[] = {0xc1};
@@ -727,6 +777,8 @@ int main(void)
   }
   signed_positive_packs_with_unsigned_format();
   positive_signed_format_unpacks_as_unsigned();
+  pack_number_non_finite_packs_as_float();
+  unpacked_negative_int32_repacks_correctly();
   unpacking_c1_returns_eread();
   parsing_very_deep_objects_returns_enomem();
   unparsing_very_deep_objects_returns_enomem();
